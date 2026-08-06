@@ -1,14 +1,27 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Plus,
+  Truck,
   Pencil,
   Trash2,
-  MoreVertical,
-  Truck,
-  MapPin,
+  Loader2,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -17,40 +30,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
 interface DeliveryZone {
   id: string;
   city: string;
   fee: number;
   estimatedDays: string;
-  courierNotes: string;
+  courierNotes?: string | null;
   active: boolean;
+  createdAt: string;
 }
 
 interface DeliveryFormData {
@@ -61,148 +54,131 @@ interface DeliveryFormData {
   active: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Demo Data
-// ---------------------------------------------------------------------------
-
-const DEMO_ZONES: DeliveryZone[] = [
-  {
-    id: "dz1",
-    city: "Kigali",
-    fee: 2000,
-    estimatedDays: "1-2",
-    courierNotes: "Same-day delivery for orders before 12 PM. Use Kigali Express courier.",
-    active: true,
-  },
-  {
-    id: "dz2",
-    city: "Kigali Outskirts",
-    fee: 3500,
-    estimatedDays: "2-3",
-    courierNotes: "Areas: Kicukiro outer, Gasabo outer, Nyarugenge outer. Use City Rider.",
-    active: true,
-  },
-  {
-    id: "dz3",
-    city: "Musanze",
-    fee: 5000,
-    estimatedDays: "3-5",
-    courierNotes: "Volcano Express. Deliveries on Mon, Wed, Fri only.",
-    active: true,
-  },
-  {
-    id: "dz4",
-    city: "Rubavu",
-    fee: 6000,
-    estimatedDays: "3-5",
-    courierNotes: "Lake Side Logistics. Road conditions may affect delivery time.",
-    active: true,
-  },
-  {
-    id: "dz5",
-    city: "Gisenyi",
-    fee: 6000,
-    estimatedDays: "4-6",
-    courierNotes: "Shared delivery with Rubavu route on Tue and Sat.",
-    active: false,
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatRWF(value: number): string {
-  return new Intl.NumberFormat("en-RW", {
-    style: "currency",
-    currency: "RWF",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 const emptyForm: DeliveryFormData = {
   city: "",
   fee: "",
-  estimatedDays: "",
+  estimatedDays: "3-5",
   courierNotes: "",
   active: true,
 };
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(amount);
+}
 
-export function DeliverySection() {
-  const [zones, setZones] = useState<DeliveryZone[]>(DEMO_ZONES);
+// ---------- Component ----------
+
+export default function DeliverySection() {
+  const [zones, setZones] = useState<DeliveryZone[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Dialogs
   const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
-  const [formData, setFormData] = useState<DeliveryFormData>(emptyForm);
-  const [editTarget, setEditTarget] = useState<DeliveryZone | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<DeliveryZone | null>(null);
+  const [editing, setEditing] = useState<DeliveryZone | null>(null);
+  const [form, setForm] = useState<DeliveryFormData>(emptyForm);
+  const [saving, setSaving] = useState(false);
 
-  function openAdd() {
-    setFormMode("add");
-    setFormData(emptyForm);
-    setEditTarget(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeliveryZone | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // ---------- Data Fetching ----------
+
+  const fetchZones = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/delivery-zones?active=false");
+      if (!res.ok) throw new Error("Failed to fetch delivery zones");
+      const json = await res.json();
+      setZones(Array.isArray(json.data) ? json.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load delivery zones");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchZones();
+  }, [fetchZones]);
+
+  // ---------- Helpers ----------
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
     setFormOpen(true);
   }
 
   function openEdit(zone: DeliveryZone) {
-    setFormMode("edit");
-    setEditTarget(zone);
-    setFormData({
+    setEditing(zone);
+    setForm({
       city: zone.city,
       fee: String(zone.fee),
       estimatedDays: zone.estimatedDays,
-      courierNotes: zone.courierNotes,
+      courierNotes: zone.courierNotes || "",
       active: zone.active,
     });
     setFormOpen(true);
   }
 
-  function handleSave() {
-    if (formMode === "add") {
-      const newZone: DeliveryZone = {
-        id: `dz-${Date.now()}`,
-        city: formData.city,
-        fee: Number(formData.fee) || 0,
-        estimatedDays: formData.estimatedDays,
-        courierNotes: formData.courierNotes,
-        active: formData.active,
+  // ---------- CRUD ----------
+
+  async function handleSave() {
+    if (!form.city.trim()) return;
+    setSaving(true);
+    try {
+      const body = {
+        city: form.city.trim(),
+        fee: parseFloat(form.fee) || 0,
+        estimatedDays: form.estimatedDays.trim() || "3-5",
+        courierNotes: form.courierNotes.trim() || undefined,
+        active: form.active,
       };
-      setZones((prev) => [...prev, newZone]);
-    } else if (editTarget) {
-      setZones((prev) =>
-        prev.map((z) =>
-          z.id === editTarget.id
-            ? {
-                ...z,
-                city: formData.city,
-                fee: Number(formData.fee) || 0,
-                estimatedDays: formData.estimatedDays,
-                courierNotes: formData.courierNotes,
-                active: formData.active,
-              }
-            : z
-        )
-      );
+
+      const url = editing
+        ? `/api/delivery-zones/${editing.id}`
+        : "/api/delivery-zones";
+      const method = editing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error("Failed to save delivery zone");
+      setFormOpen(false);
+      await fetchZones();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
     }
-    setFormOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) return;
-    setZones((prev) => prev.filter((z) => z.id !== deleteTarget.id));
-    setDeleteOpen(false);
-    setDeleteTarget(null);
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/delivery-zones/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete delivery zone");
+      setDeleteTarget(null);
+      await fetchZones();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  function toggleActive(zone: DeliveryZone) {
-    setZones((prev) =>
-      prev.map((z) => (z.id === zone.id ? { ...z, active: !z.active } : z))
-    );
-  }
+  // ---------- Render ----------
 
   return (
     <div className="space-y-6">
@@ -210,188 +186,213 @@ export function DeliverySection() {
         title="Delivery Zones"
         description="Manage delivery areas and fees"
         action={
-          <Button onClick={openAdd}>
+          <Button onClick={openCreate}>
             <Plus className="mr-2 size-4" />
             Add Zone
           </Button>
         }
       />
 
-      {zones.length === 0 ? (
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>City</TableHead>
+                <TableHead>Fee</TableHead>
+                <TableHead>Est. Days</TableHead>
+                <TableHead>Courier Notes</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full max-w-[100px]" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && zones.length === 0 && (
         <EmptyState
-          icon={MapPin}
+          icon={Truck}
           title="No delivery zones"
-          description="Add your first delivery zone to get started."
+          description="Add delivery zones to configure shipping fees and estimated delivery times."
           action={
-            <Button size="sm" onClick={openAdd}>
+            <Button onClick={openCreate}>
               <Plus className="mr-2 size-4" />
               Add Zone
             </Button>
           }
         />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>City</TableHead>
-                  <TableHead className="text-right">Fee</TableHead>
-                  <TableHead>Est. Delivery</TableHead>
-                  <TableHead className="hidden md:table-cell">Courier Notes</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {zones.map((zone) => (
-                  <TableRow key={zone.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="size-4 text-muted-foreground" />
-                        <span className="font-medium">{zone.city}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatRWF(zone.fee)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        <Truck className="size-3 mr-1" />
-                        {zone.estimatedDays} days
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell max-w-[250px] truncate text-muted-foreground text-sm">
-                      {zone.courierNotes}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={zone.active ? "default" : "secondary"}
-                        className={zone.active ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-                      >
-                        {zone.active ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-8">
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => toggleActive(zone)}>
-                            {zone.active ? "Deactivate" : "Activate"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openEdit(zone)}>
-                            <Pencil className="mr-2 size-4" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => {
-                              setDeleteTarget(zone);
-                              setDeleteOpen(true);
-                            }}
-                          >
-                            <Trash2 className="mr-2 size-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
       )}
 
-      {/* Add/Edit Dialog */}
+      {/* Table */}
+      {!loading && zones.length > 0 && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>City</TableHead>
+                <TableHead className="text-right">Fee</TableHead>
+                <TableHead>Est. Days</TableHead>
+                <TableHead>Courier Notes</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {zones.map((zone) => (
+                <TableRow key={zone.id}>
+                  <TableCell className="font-medium">{zone.city}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(zone.fee)}
+                  </TableCell>
+                  <TableCell>{zone.estimatedDays} days</TableCell>
+                  <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                    {zone.courierNotes || "—"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={zone.active ? "default" : "secondary"}>
+                      {zone.active ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={() => openEdit(zone)}
+                        title="Edit"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-red-500 hover:text-red-600"
+                        onClick={() => setDeleteTarget(zone)}
+                        title="Delete"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{formMode === "add" ? "Add Delivery Zone" : "Edit Delivery Zone"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Delivery Zone" : "Add Delivery Zone"}
+            </DialogTitle>
             <DialogDescription>
-              {formMode === "add"
-                ? "Add a new delivery zone with fees and timing."
-                : "Update delivery zone details."}
+              {editing
+                ? "Update delivery zone details."
+                : "Configure a new delivery zone."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="city">City / Area *</Label>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="dz-city">City *</Label>
               <Input
-                id="city"
-                value={formData.city}
-                onChange={(e) => setFormData((f) => ({ ...f, city: e.target.value }))}
-                placeholder="e.g., Kigali"
+                id="dz-city"
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                placeholder="City name"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="fee">Delivery Fee (RWF) *</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="dz-fee">Delivery Fee ($)</Label>
                 <Input
-                  id="fee"
+                  id="dz-fee"
                   type="number"
-                  value={formData.fee}
-                  onChange={(e) => setFormData((f) => ({ ...f, fee: e.target.value }))}
-                  placeholder="0"
+                  step="0.01"
+                  value={form.fee}
+                  onChange={(e) => setForm({ ...form, fee: e.target.value })}
+                  placeholder="0.00"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="days">Est. Days *</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="dz-days">Est. Days</Label>
                 <Input
-                  id="days"
-                  value={formData.estimatedDays}
-                  onChange={(e) => setFormData((f) => ({ ...f, estimatedDays: e.target.value }))}
-                  placeholder="e.g., 1-2"
+                  id="dz-days"
+                  value={form.estimatedDays}
+                  onChange={(e) => setForm({ ...form, estimatedDays: e.target.value })}
+                  placeholder="3-5"
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Courier Notes</Label>
+            <div className="grid gap-2">
+              <Label htmlFor="dz-notes">Courier Notes</Label>
               <Input
-                id="notes"
-                value={formData.courierNotes}
-                onChange={(e) => setFormData((f) => ({ ...f, courierNotes: e.target.value }))}
-                placeholder="Courier company, delivery schedule..."
+                id="dz-notes"
+                value={form.courierNotes}
+                onChange={(e) => setForm({ ...form, courierNotes: e.target.value })}
+                placeholder="Any special delivery notes"
               />
             </div>
             <div className="flex items-center justify-between">
-              <div>
-                <Label>Active</Label>
-                <p className="text-xs text-muted-foreground">Enable this zone for delivery</p>
-              </div>
+              <Label htmlFor="dz-active">Active</Label>
               <Switch
-                checked={formData.active}
-                onCheckedChange={(checked) => setFormData((f) => ({ ...f, active: checked }))}
+                id="dz-active"
+                checked={form.active}
+                onCheckedChange={(v) => setForm({ ...form, active: v })}
               />
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!formData.city.trim() || !formData.fee}>
-              {formMode === "add" ? "Add Zone" : "Save Changes"}
+            <Button variant="outline" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !form.city.trim()}
+            >
+              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {editing ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Delivery Zone</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete the <strong>{deleteTarget?.city}</strong> delivery zone? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete Delivery Zone"
+        description={`Are you sure you want to delete the delivery zone for "${deleteTarget?.city || ""}"?`}
+        onConfirm={handleDelete}
+        variant="destructive"
+        confirmLabel="Delete"
+        isLoading={deleting}
+      />
     </div>
   );
 }

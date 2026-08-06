@@ -1,35 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Plus,
+  Users,
   Pencil,
   Trash2,
-  MoreVertical,
-  Shield,
-  ShieldCheck,
-  UserCog,
+  Loader2,
 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -39,21 +29,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
-import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import type { StaffRole, StaffStatus } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
-interface Staff {
+interface StaffMember {
   id: string;
   name: string;
   email: string;
@@ -69,59 +59,6 @@ interface StaffFormData {
   status: StaffStatus;
 }
 
-// ---------------------------------------------------------------------------
-// Demo Data
-// ---------------------------------------------------------------------------
-
-const DEMO_STAFF: Staff[] = [
-  {
-    id: "s1",
-    name: "Alice Uwimana",
-    email: "alice@umuhozafashion.rw",
-    role: "owner",
-    status: "active",
-    createdAt: "2023-06-15T00:00:00Z",
-  },
-  {
-    id: "s2",
-    name: "Jean Marie Vianney",
-    email: "jmv@umuhozafashion.rw",
-    role: "admin",
-    status: "active",
-    createdAt: "2024-01-10T00:00:00Z",
-  },
-  {
-    id: "s3",
-    name: "Diane Mugisha",
-    email: "diane.m@umuhozafashion.rw",
-    role: "staff",
-    status: "active",
-    createdAt: "2024-08-20T00:00:00Z",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const ROLE_CONFIG: Record<StaffRole, { label: string; icon: React.ElementType; className: string }> = {
-  owner: {
-    label: "Owner",
-    icon: Shield,
-    className: "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
-  },
-  admin: {
-    label: "Admin",
-    icon: ShieldCheck,
-    className: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",
-  },
-  staff: {
-    label: "Staff",
-    icon: UserCog,
-    className: "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700",
-  },
-};
-
 const emptyForm: StaffFormData = {
   name: "",
   email: "",
@@ -129,270 +66,356 @@ const emptyForm: StaffFormData = {
   status: "active",
 };
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+const roles: { value: StaffRole; label: string }[] = [
+  { value: "owner", label: "Owner" },
+  { value: "admin", label: "Admin" },
+  { value: "staff", label: "Staff" },
+];
 
-export function StaffSection() {
-  const [staff, setStaff] = useState<Staff[]>(DEMO_STAFF);
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function getRoleBadgeVariant(role: StaffRole): "default" | "secondary" | "outline" {
+  switch (role) {
+    case "owner": return "default";
+    case "admin": return "outline";
+    default: return "secondary";
+  }
+}
+
+// ---------- Component ----------
+
+export default function StaffSection() {
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Dialogs
   const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
-  const [formData, setFormData] = useState<StaffFormData>(emptyForm);
-  const [editTarget, setEditTarget] = useState<Staff | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Staff | null>(null);
+  const [editing, setEditing] = useState<StaffMember | null>(null);
+  const [form, setForm] = useState<StaffFormData>(emptyForm);
+  const [saving, setSaving] = useState(false);
 
-  function openAdd() {
-    setFormMode("add");
-    setFormData(emptyForm);
-    setEditTarget(null);
+  const [deleteTarget, setDeleteTarget] = useState<StaffMember | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // ---------- Data Fetching ----------
+
+  const fetchStaff = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/staff?active=false");
+      if (!res.ok) throw new Error("Failed to fetch staff");
+      const json = await res.json();
+      setStaff(Array.isArray(json.data) ? json.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load staff");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStaff();
+  }, [fetchStaff]);
+
+  // ---------- Helpers ----------
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
     setFormOpen(true);
   }
 
-  function openEdit(s: Staff) {
-    setFormMode("edit");
-    setEditTarget(s);
-    setFormData({
-      name: s.name,
-      email: s.email,
-      role: s.role,
-      status: s.status,
+  function openEdit(member: StaffMember) {
+    setEditing(member);
+    setForm({
+      name: member.name,
+      email: member.email,
+      role: member.role,
+      status: member.status,
     });
     setFormOpen(true);
   }
 
-  function handleSave() {
-    if (formMode === "add") {
-      setStaff((prev) => [
-        ...prev,
-        {
-          id: `s-${Date.now()}`,
-          ...formData,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    } else if (editTarget) {
-      setStaff((prev) =>
-        prev.map((s) => (s.id === editTarget.id ? { ...s, ...formData } : s))
-      );
+  // ---------- CRUD ----------
+
+  async function handleSave() {
+    if (!form.name.trim() || !form.email.trim()) return;
+    setSaving(true);
+    try {
+      const body = {
+        name: form.name.trim(),
+        email: form.email.trim(),
+        role: form.role,
+        status: form.status,
+      };
+
+      const url = editing
+        ? `/api/staff/${editing.id}`
+        : "/api/staff";
+      const method = editing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error("Failed to save staff member");
+      setFormOpen(false);
+      await fetchStaff();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
     }
-    setFormOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) return;
-    setStaff((prev) => prev.filter((s) => s.id !== deleteTarget.id));
-    setDeleteOpen(false);
-    setDeleteTarget(null);
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/staff/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete staff member");
+      setDeleteTarget(null);
+      await fetchStaff();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  function toggleStatus(s: Staff) {
-    setStaff((prev) =>
-      prev.map((st) =>
-        st.id === s.id
-          ? { ...st, status: (st.status === "active" ? "inactive" : "active") as StaffStatus }
-          : st
-      )
-    );
-  }
+  // ---------- Render ----------
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Staff"
-        description="Manage team members and permissions"
+        description="Manage team members and their roles"
         action={
-          <Button onClick={openAdd}>
+          <Button onClick={openCreate}>
             <Plus className="mr-2 size-4" />
             Add Staff
           </Button>
         }
       />
 
-      {staff.length === 0 ? (
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full max-w-[100px]" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && staff.length === 0 && (
         <EmptyState
-          icon={UserCog}
+          icon={Users}
           title="No staff members"
-          description="Add your first team member."
+          description="Add team members to help manage your store."
           action={
-            <Button size="sm" onClick={openAdd}>
+            <Button onClick={openCreate}>
               <Plus className="mr-2 size-4" />
               Add Staff
             </Button>
           }
         />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden sm:table-cell">Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Created</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {staff.map((s) => {
-                  const roleConfig = ROLE_CONFIG[s.role];
-                  const RoleIcon = roleConfig.icon;
-                  return (
-                    <TableRow key={s.id} className={s.status === "inactive" ? "opacity-60" : ""}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex size-8 items-center justify-center rounded-full bg-muted font-semibold text-xs text-muted-foreground">
-                            {s.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)}
-                          </div>
-                          <span className="font-medium">{s.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
-                        {s.email}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={cn("gap-1", roleConfig.className)}>
-                          <RoleIcon className="size-3" />
-                          {roleConfig.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={s.status === "active" ? "default" : "secondary"}
-                          className={s.status === "active" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-                        >
-                          {s.status === "active" ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
-                        {new Date(s.createdAt).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-8">
-                              <MoreVertical className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => toggleStatus(s)}>
-                              {s.status === "active" ? "Deactivate" : "Activate"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => openEdit(s)}>
-                              <Pencil className="mr-2 size-4" /> Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                setDeleteTarget(s);
-                                setDeleteOpen(true);
-                              }}
-                            >
-                              <Trash2 className="mr-2 size-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
       )}
 
-      {/* Add/Edit Dialog */}
+      {/* Table */}
+      {!loading && staff.length > 0 && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {staff.map((member) => (
+                <TableRow key={member.id}>
+                  <TableCell className="font-medium">{member.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{member.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={getRoleBadgeVariant(member.role)} className="capitalize">
+                      {member.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={member.status === "active" ? "default" : "secondary"}>
+                      {member.status === "active" ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {formatDate(member.createdAt)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={() => openEdit(member)}
+                        title="Edit"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-red-500 hover:text-red-600"
+                        onClick={() => setDeleteTarget(member)}
+                        title="Delete"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{formMode === "add" ? "Add Staff Member" : "Edit Staff Member"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Staff Member" : "Add Staff Member"}
+            </DialogTitle>
             <DialogDescription>
-              {formMode === "add"
-                ? "Add a new team member to your store."
-                : "Update staff member details."}
+              {editing
+                ? "Update staff member details."
+                : "Add a new team member to your store."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="s-name">Name *</Label>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="staff-name">Name *</Label>
               <Input
-                id="s-name"
-                value={formData.name}
-                onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
+                id="staff-name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="Full name"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="s-email">Email *</Label>
+            <div className="grid gap-2">
+              <Label htmlFor="staff-email">Email *</Label>
               <Input
-                id="s-email"
+                id="staff-email"
                 type="email"
-                value={formData.email}
-                onChange={(e) => setFormData((f) => ({ ...f, email: e.target.value }))}
-                placeholder="name@store.rw"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="email@example.com"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Role *</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(v) => setFormData((f) => ({ ...f, role: v as StaffRole }))}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="owner">Owner</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="staff">Staff</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Status *</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(v) => setFormData((f) => ({ ...f, status: v as StaffStatus }))}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid gap-2">
+              <Label htmlFor="staff-role">Role</Label>
+              <Select
+                value={form.role}
+                onValueChange={(v) => setForm({ ...form, role: v as StaffRole })}
+              >
+                <SelectTrigger id="staff-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.value} value={r.value}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="staff-status">Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v) => setForm({ ...form, status: v as StaffStatus })}
+              >
+                <SelectTrigger id="staff-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!formData.name.trim() || !formData.email.trim()}>
-              {formMode === "add" ? "Add Staff" : "Save Changes"}
+            <Button variant="outline" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !form.name.trim() || !form.email.trim()}
+            >
+              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {editing ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove Staff Member</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Remove</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete Staff Member"
+        description={`Are you sure you want to remove "${deleteTarget?.name || "this staff member"}"?`}
+        onConfirm={handleDelete}
+        variant="destructive"
+        confirmLabel="Delete"
+        isLoading={deleting}
+      />
     </div>
   );
 }

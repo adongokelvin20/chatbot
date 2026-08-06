@@ -17,6 +17,8 @@ import {
   Settings,
   ChevronRight,
   Sparkles,
+  HelpCircle,
+  Bell,
 } from "lucide-react";
 import {
   Sidebar,
@@ -65,8 +67,10 @@ const mainNavItems: NavItemDef[] = [
   { section: "delivery", label: "Delivery", icon: Truck },
   { section: "payments", label: "Payments", icon: CreditCard },
   { section: "promotions", label: "Promotions", icon: Percent },
+  { section: "faq", label: "FAQs", icon: HelpCircle },
   { section: "analytics", label: "Analytics", icon: BarChart3 },
   { section: "staff", label: "Staff", icon: UserCog },
+  { section: "notifications", label: "Notifications", icon: Bell },
 ];
 
 const settingsNavItems: NavItemDef[] = [

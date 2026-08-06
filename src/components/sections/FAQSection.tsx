@@ -1,36 +1,27 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Plus,
+  HelpCircle,
   Pencil,
   Trash2,
-  MoreVertical,
-  HelpCircle,
-  Search,
+  Loader2,
 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -40,25 +31,28 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import type { FAQCategory } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
 interface FAQ {
   id: string;
   question: string;
   answer: string;
-  category: string;
-  keywords: string[];
+  category?: string | null;
+  keywords?: string[] | null;
   active: boolean;
+  createdAt: string;
 }
 
 interface FAQFormData {
@@ -69,328 +63,322 @@ interface FAQFormData {
   active: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Demo Data
-// ---------------------------------------------------------------------------
+const emptyForm: FAQFormData = {
+  question: "",
+  answer: "",
+  category: "",
+  keywords: "",
+  active: true,
+};
 
-const DEMO_FAQS: FAQ[] = [
-  {
-    id: "faq1",
-    question: "How long does delivery take within Kigali?",
-    answer: "Deliveries within Kigali typically take 1-2 business days. Orders placed before 12 PM may qualify for same-day delivery. We use Kigali Express courier for all city deliveries.",
-    category: "delivery",
-    keywords: ["delivery", "kigali", "shipping", "how long", "days", "time"],
-    active: true,
-  },
-  {
-    id: "faq2",
-    question: "What is your return and exchange policy?",
-    answer: "We accept returns within 7 days of delivery for unworn items with original tags. Exchanges are free for a different size or color. Refunds are processed within 3-5 business days to your original payment method. Items on sale are final sale.",
-    category: "returns",
-    keywords: ["return", "exchange", "refund", "policy", "money back"],
-    active: true,
-  },
-  {
-    id: "faq3",
-    question: "What payment methods do you accept?",
-    answer: "We accept MTN Mobile Money, Airtel Money, Bank of Kigali transfers, and Cash on Delivery. For online orders, Mobile Money is the fastest payment method. Bank transfers may take 1-2 hours to reflect.",
-    category: "payment",
-    keywords: ["payment", "pay", "momo", "bank", "cash", "money", "method"],
-    active: true,
-  },
-  {
-    id: "faq4",
-    question: "How do I know my size? Do you have a size guide?",
-    answer: "Yes! We have a detailed size guide available on each product page. For African wear, we recommend measuring your chest, waist, and hips and comparing with our chart. If you're between sizes, we suggest going up one size. You can also message us with your measurements and we'll recommend the best fit.",
-    category: "general",
-    keywords: ["size", "sizing", "fit", "measurement", "guide", "chart"],
-    active: true,
-  },
-  {
-    id: "faq5",
-    question: "Do you offer bulk or wholesale orders for events?",
-    answer: "Absolutely! We offer special bulk pricing for orders of 5 or more matching outfits. This is popular for weddings, family events, church groups, and corporate events. Contact us directly for a custom quote — we typically offer 10-20% off bulk orders depending on quantity.",
-    category: "general",
-    keywords: ["bulk", "wholesale", "event", "wedding", "group", "corporate", "custom"],
-    active: true,
-  },
-  {
-    id: "faq6",
-    question: "What are your business hours?",
-    answer: "We're open Monday to Saturday, 8:00 AM to 6:00 PM. Sunday is a rest day. Our AI assistant is available 24/7 to answer questions, take orders, and help with product inquiries. During business hours, human staff is also available for complex requests.",
-    category: "general",
-    keywords: ["hours", "open", "close", "time", "when", "schedule", "business"],
-    active: false,
-  },
-];
-
-const CATEGORIES = [
+const faqCategories: { value: FAQCategory; label: string }[] = [
   { value: "delivery", label: "Delivery" },
   { value: "payment", label: "Payment" },
   { value: "returns", label: "Returns" },
   { value: "general", label: "General" },
 ];
 
-const CATEGORY_COLORS: Record<string, string> = {
-  delivery: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
-  payment: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  returns: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  general: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-};
+// ---------- Component ----------
 
-const emptyForm: FAQFormData = {
-  question: "",
-  answer: "",
-  category: "general",
-  keywords: "",
-  active: true,
-};
+export default function FAQSection() {
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export function FAQSection() {
-  const [faqs, setFaqs] = useState<FAQ[]>(DEMO_FAQS);
-  const [search, setSearch] = useState("");
+  // Dialogs
   const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
-  const [formData, setFormData] = useState<FAQFormData>(emptyForm);
-  const [editTarget, setEditTarget] = useState<FAQ | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editing, setEditing] = useState<FAQ | null>(null);
+  const [form, setForm] = useState<FAQFormData>(emptyForm);
+  const [saving, setSaving] = useState(false);
+
   const [deleteTarget, setDeleteTarget] = useState<FAQ | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return faqs;
-    const q = search.toLowerCase();
-    return faqs.filter(
-      (f) =>
-        f.question.toLowerCase().includes(q) ||
-        f.answer.toLowerCase().includes(q) ||
-        f.keywords.some((k) => k.includes(q))
-    );
-  }, [faqs, search]);
+  // ---------- Data Fetching ----------
 
-  function openAdd() {
-    setFormMode("add");
-    setFormData(emptyForm);
-    setEditTarget(null);
+  const fetchFAQs = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/faqs?active=false");
+      if (!res.ok) throw new Error("Failed to fetch FAQs");
+      const json = await res.json();
+      setFaqs(Array.isArray(json.data) ? json.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load FAQs");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFAQs();
+  }, [fetchFAQs]);
+
+  // ---------- Helpers ----------
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
     setFormOpen(true);
   }
 
   function openEdit(faq: FAQ) {
-    setFormMode("edit");
-    setEditTarget(faq);
-    setFormData({
+    setEditing(faq);
+    setForm({
       question: faq.question,
       answer: faq.answer,
-      category: faq.category,
-      keywords: faq.keywords.join(", "),
+      category: faq.category || "",
+      keywords: faq.keywords?.join(", ") || "",
       active: faq.active,
     });
     setFormOpen(true);
   }
 
-  function handleSave() {
-    const data = {
-      question: formData.question,
-      answer: formData.answer,
-      category: formData.category,
-      keywords: formData.keywords
-        .split(",")
-        .map((k) => k.trim().toLowerCase())
-        .filter(Boolean),
-      active: formData.active,
-    };
+  // ---------- CRUD ----------
 
-    if (formMode === "add") {
-      setFaqs((prev) => [...prev, { id: `faq-${Date.now()}`, ...data }]);
-    } else if (editTarget) {
-      setFaqs((prev) =>
-        prev.map((f) => (f.id === editTarget.id ? { ...f, ...data } : f))
-      );
+  async function handleSave() {
+    if (!form.question.trim() || !form.answer.trim()) return;
+    setSaving(true);
+    try {
+      const body = {
+        question: form.question.trim(),
+        answer: form.answer.trim(),
+        category: form.category || undefined,
+        keywords: form.keywords
+          ? form.keywords.split(",").map((s) => s.trim()).filter(Boolean)
+          : undefined,
+        active: form.active,
+      };
+
+      const url = editing
+        ? `/api/faqs/${editing.id}`
+        : "/api/faqs";
+      const method = editing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error("Failed to save FAQ");
+      setFormOpen(false);
+      await fetchFAQs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
     }
-    setFormOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) return;
-    setFaqs((prev) => prev.filter((f) => f.id !== deleteTarget.id));
-    setDeleteOpen(false);
-    setDeleteTarget(null);
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/faqs/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete FAQ");
+      setDeleteTarget(null);
+      await fetchFAQs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  function toggleActive(faq: FAQ) {
-    setFaqs((prev) =>
-      prev.map((f) => (f.id === faq.id ? { ...f, active: !f.active } : f))
-    );
-  }
+  // ---------- Render ----------
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="FAQs"
-        description="Manage frequently asked questions for your AI assistant"
+        description="Manage frequently asked questions for AI assistant"
         action={
-          <Button onClick={openAdd}>
+          <Button onClick={openCreate}>
             <Plus className="mr-2 size-4" />
             Add FAQ
           </Button>
         }
       />
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search FAQs..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={HelpCircle}
-          title="No FAQs found"
-          description={search ? "Try a different search term." : "Add your first FAQ to help your AI assistant answer common questions."}
-          action={
-            !search ? (
-              <Button size="sm" onClick={openAdd}>
-                <Plus className="mr-2 size-4" />
-                Add FAQ
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[35%]">Question</TableHead>
-                  <TableHead className="hidden lg:table-cell">Answer</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="hidden md:table-cell">Keywords</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((faq) => (
-                  <TableRow key={faq.id} className={!faq.active ? "opacity-60" : ""}>
-                    <TableCell>
-                      <p className="font-medium text-sm line-clamp-1">{faq.question}</p>
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <p className="text-sm text-muted-foreground line-clamp-2 max-w-[300px]">
-                        {faq.answer}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={CATEGORY_COLORS[faq.category] ?? ""}
-                      >
-                        {CATEGORIES.find((c) => c.value === faq.category)?.label ?? faq.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {faq.keywords.slice(0, 3).map((kw) => (
-                          <Badge key={kw} variant="secondary" className="text-[10px] px-1.5 py-0">
-                            {kw}
-                          </Badge>
-                        ))}
-                        {faq.keywords.length > 3 && (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            +{faq.keywords.length - 3}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={faq.active ? "default" : "secondary"}
-                        className={faq.active ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-                      >
-                        {faq.active ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-8">
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => toggleActive(faq)}>
-                            {faq.active ? "Deactivate" : "Activate"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openEdit(faq)}>
-                            <Pencil className="mr-2 size-4" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => {
-                              setDeleteTarget(faq);
-                              setDeleteOpen(true);
-                            }}
-                          >
-                            <Trash2 className="mr-2 size-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
       )}
 
-      {/* Add/Edit Dialog */}
+      {/* Loading */}
+      {loading && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Question</TableHead>
+                <TableHead>Answer</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Keywords</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full max-w-[120px]" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && faqs.length === 0 && (
+        <EmptyState
+          icon={HelpCircle}
+          title="No FAQs yet"
+          description="Add FAQs to help your AI assistant answer common questions."
+          action={
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 size-4" />
+              Add FAQ
+            </Button>
+          }
+        />
+      )}
+
+      {/* Table */}
+      {!loading && faqs.length > 0 && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[200px]">Question</TableHead>
+                <TableHead className="min-w-[200px]">Answer</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Keywords</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {faqs.map((faq) => (
+                <TableRow key={faq.id}>
+                  <TableCell className="font-medium">{faq.question}</TableCell>
+                  <TableCell className="max-w-[250px] truncate text-muted-foreground">
+                    {faq.answer}
+                  </TableCell>
+                  <TableCell>
+                    {faq.category ? (
+                      <Badge variant="outline" className="capitalize">
+                        {faq.category}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {(faq.keywords || []).slice(0, 3).map((kw, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">
+                          {kw}
+                        </Badge>
+                      ))}
+                      {(faq.keywords || []).length > 3 && (
+                        <span className="text-xs text-muted-foreground">
+                          +{faq.keywords!.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={faq.active ? "default" : "secondary"}>
+                      {faq.active ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={() => openEdit(faq)}
+                        title="Edit"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-red-500 hover:text-red-600"
+                        onClick={() => setDeleteTarget(faq)}
+                        title="Delete"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{formMode === "add" ? "Add FAQ" : "Edit FAQ"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit FAQ" : "Add FAQ"}
+            </DialogTitle>
             <DialogDescription>
-              {formMode === "add"
-                ? "Add a new FAQ for your AI assistant."
-                : "Update the FAQ details."}
+              {editing
+                ? "Update this FAQ entry."
+                : "Add a new question and answer for the AI assistant."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Question *</Label>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="faq-question">Question *</Label>
               <Input
-                value={formData.question}
-                onChange={(e) => setFormData((f) => ({ ...f, question: e.target.value }))}
+                id="faq-question"
+                value={form.question}
+                onChange={(e) => setForm({ ...form, question: e.target.value })}
                 placeholder="e.g., What are your delivery hours?"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Answer *</Label>
+
+            <div className="grid gap-2">
+              <Label htmlFor="faq-answer">Answer *</Label>
               <Textarea
-                value={formData.answer}
-                onChange={(e) => setFormData((f) => ({ ...f, answer: e.target.value }))}
-                placeholder="Write the answer your AI will use..."
+                id="faq-answer"
+                value={form.answer}
+                onChange={(e) => setForm({ ...form, answer: e.target.value })}
+                placeholder="The answer the AI should give..."
                 rows={4}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Category *</Label>
+
+            <div className="grid gap-2">
+              <Label htmlFor="faq-category">Category</Label>
               <Select
-                value={formData.category}
-                onValueChange={(v) => setFormData((f) => ({ ...f, category: v }))}
+                value={form.category}
+                onValueChange={(v) => setForm({ ...form, category: v })}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="faq-category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => (
+                  {faqCategories.map((c) => (
                     <SelectItem key={c.value} value={c.value}>
                       {c.label}
                     </SelectItem>
@@ -398,52 +386,56 @@ export function FAQSection() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Keywords</Label>
+
+            <div className="grid gap-2">
+              <Label htmlFor="faq-keywords">Keywords</Label>
               <Input
-                value={formData.keywords}
-                onChange={(e) => setFormData((f) => ({ ...f, keywords: e.target.value }))}
-                placeholder="delivery, shipping, days, kigali (comma-separated)"
+                id="faq-keywords"
+                value={form.keywords}
+                onChange={(e) => setForm({ ...form, keywords: e.target.value })}
+                placeholder="delivery, shipping, time"
               />
               <p className="text-xs text-muted-foreground">
-                Comma-separated keywords help the AI match customer questions to this FAQ.
+                Comma-separated keywords for AI matching
               </p>
             </div>
+
             <div className="flex items-center justify-between">
-              <div>
-                <Label>Active</Label>
-                <p className="text-xs text-muted-foreground">This FAQ is used by the AI</p>
-              </div>
+              <Label htmlFor="faq-active">Active</Label>
               <Switch
-                checked={formData.active}
-                onCheckedChange={(checked) => setFormData((f) => ({ ...f, active: checked }))}
+                id="faq-active"
+                checked={form.active}
+                onCheckedChange={(v) => setForm({ ...form, active: v })}
               />
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!formData.question.trim() || !formData.answer.trim()}>
-              {formMode === "add" ? "Add FAQ" : "Save Changes"}
+            <Button variant="outline" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !form.question.trim() || !form.answer.trim()}
+            >
+              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {editing ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete FAQ</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this FAQ? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete FAQ"
+        description={`Are you sure you want to delete this FAQ?`}
+        onConfirm={handleDelete}
+        variant="destructive"
+        confirmLabel="Delete"
+        isLoading={deleting}
+      />
     </div>
   );
 }

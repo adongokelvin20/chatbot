@@ -1,23 +1,22 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
+  Save,
+  Loader2,
   Bot,
   Send,
   Eye,
   EyeOff,
-  Save,
-  TestTube2,
-  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -32,423 +31,473 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmptyState } from "@/components/common/EmptyState";
 import type { AIpersonality, AITone } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
 interface AISettings {
-  personality: AIpersonality;
-  tone: AITone;
-  language: string;
-  greetingMessage: string;
-  autoReply: boolean;
-  workingHoursReply: string;
-  model: string;
-  apiKey: string;
+  id: string;
+  personality?: string | null;
+  tone?: string | null;
+  language?: string | null;
+  greetingMessage?: string | null;
+  workingHoursReply?: string | null;
+  autoReply?: boolean;
+  model?: string | null;
+  apiKey?: string | null;
 }
 
 interface TestMessage {
-  id: string;
+  role: "user" | "assistant";
   content: string;
-  sender: "user" | "ai";
-  createdAt: string;
 }
 
-// ---------------------------------------------------------------------------
-// Demo / Default Values
-// ---------------------------------------------------------------------------
-
-const DEFAULT_SETTINGS: AISettings = {
-  personality: "friendly",
-  tone: "helpful",
-  language: "en",
-  greetingMessage:
-    "Murakaza neza! 🌟 Welcome to Umuhoza Fashion House. I'm your AI shopping assistant. I can help you find the perfect outfit, check sizes, track orders, or answer any questions. How can I help you today?",
-  autoReply: true,
-  workingHoursReply:
-    "Thank you for reaching out! Our shop hours are Mon-Sat, 8:00 AM - 6:00 PM. We're currently closed, but I'll make sure to get back to you first thing tomorrow. Karibu! 🙏",
-  model: "gpt-4o-mini",
-  apiKey: "sk-proj-xxxxxxxxxxxxxxxxxxxx",
-};
-
-const PERSONALITIES: { value: AIpersonality; label: string; description: string }[] = [
-  {
-    value: "professional",
-    label: "Professional",
-    description: "Formal and business-like. Best for high-end boutiques.",
-  },
-  {
-    value: "friendly",
-    label: "Friendly",
-    description: "Warm and welcoming. Great for building customer relationships.",
-  },
-  {
-    value: "casual",
-    label: "Casual",
-    description: "Relaxed and informal. Ideal for trendy, youthful brands.",
-  },
+const personalities: { value: AIpersonality; label: string }[] = [
+  { value: "professional", label: "Professional" },
+  { value: "friendly", label: "Friendly" },
+  { value: "casual", label: "Casual" },
 ];
 
-const TONES: { value: AITone; label: string; description: string }[] = [
-  { value: "helpful", label: "Helpful", description: "Focused on solving customer problems efficiently." },
-  { value: "enthusiastic", label: "Enthusiastic", description: "Excited and energetic. Creates a fun shopping experience." },
-  { value: "calm", label: "Calm", description: "Patient and composed. Good for handling complaints." },
+const tones: { value: AITone; label: string }[] = [
+  { value: "helpful", label: "Helpful" },
+  { value: "enthusiastic", label: "Enthusiastic" },
+  { value: "calm", label: "Calm" },
 ];
 
-const LANGUAGES = [
+const languages = [
   { value: "en", label: "English" },
-  { value: "rw", label: "Kinyarwanda" },
+  { value: "es", label: "Spanish" },
   { value: "fr", label: "French" },
+  { value: "ar", label: "Arabic" },
+  { value: "vi", label: "Vietnamese" },
+  { value: "zh", label: "Chinese" },
 ];
 
-const MODELS = [
-  { value: "gpt-4o", label: "GPT-4o" },
+const models = [
   { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
+  { value: "gpt-4o", label: "GPT-4o" },
   { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+  { value: "claude-3-haiku", label: "Claude 3 Haiku" },
+  { value: "claude-3-sonnet", label: "Claude 3 Sonnet" },
 ];
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+// ---------- Component ----------
 
-export function AISettingsSection() {
-  const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
+export default function AISettingsSection() {
+  const [settings, setSettings] = useState<AISettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+
+  // Test dialog
   const [testOpen, setTestOpen] = useState(false);
-  const [testMessages, setTestMessages] = useState<TestMessage[]>([]);
   const [testInput, setTestInput] = useState("");
-  const [isTesting, setIsTesting] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [testMessages, setTestMessages] = useState<TestMessage[]>([]);
+  const [testLoading, setTestLoading] = useState(false);
+
+  // Form state
+  const [form, setForm] = useState({
+    personality: "professional" as AIpersonality,
+    tone: "helpful" as AITone,
+    language: "en",
+    greetingMessage: "",
+    workingHoursReply: "",
+    autoReply: true,
+    model: "gpt-4o-mini",
+    apiKey: "",
+  });
+
+  // ---------- Data Fetching ----------
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/ai-settings");
+      if (!res.ok) throw new Error("Failed to fetch AI settings");
+      const json = await res.json();
+      const data = json.data;
+      setSettings(data);
+
+      if (data) {
+        setForm({
+          personality: (data.personality as AIpersonality) || "professional",
+          tone: (data.tone as AITone) || "helpful",
+          language: data.language || "en",
+          greetingMessage: data.greetingMessage || "",
+          workingHoursReply: data.workingHoursReply || "",
+          autoReply: data.autoReply ?? true,
+          model: data.model || "gpt-4o-mini",
+          apiKey: data.apiKey || "",
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load settings");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [testMessages.length]);
+    fetchSettings();
+  }, [fetchSettings]);
 
-  function openTestDialog() {
-    setTestMessages([
-      {
-        id: "greeting",
-        content: settings.greetingMessage,
-        sender: "ai",
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+  // ---------- Save ----------
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/ai-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error("Failed to save settings");
+      const json = await res.json();
+      setSettings(json.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ---------- Test AI ----------
+
+  function openTest() {
+    setTestMessages([]);
     setTestInput("");
     setTestOpen(true);
   }
 
-  async function sendTestMessage() {
-    if (!testInput.trim()) return;
-    const userMsg: TestMessage = {
-      id: `user-${Date.now()}`,
-      content: testInput.trim(),
-      sender: "user",
-      createdAt: new Date().toISOString(),
-    };
-    setTestMessages((prev) => [...prev, userMsg]);
+  async function handleTestSend() {
+    if (!testInput.trim() || testLoading) return;
+    const userMsg = testInput.trim();
     setTestInput("");
-    setIsTesting(true);
-
-    // Simulate AI response
-    await new Promise((r) => setTimeout(r, 1200));
-    const aiMsg: TestMessage = {
-      id: `ai-${Date.now()}`,
-      content:
-        "This is a simulated AI response. In production, the AI would use your configured model and personality to generate a contextual reply. Your settings look great! ✨",
-      sender: "ai",
-      createdAt: new Date().toISOString(),
-    };
-    setTestMessages((prev) => [...prev, aiMsg]);
-    setIsTesting(false);
+    setTestMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setTestLoading(true);
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerMessage: userMsg }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setTestMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: json.data.reply },
+        ]);
+      } else {
+        setTestMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "Error: " + (json.error || "Failed") },
+        ]);
+      }
+    } catch {
+      setTestMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Failed to get AI response." },
+      ]);
+    } finally {
+      setTestLoading(false);
+    }
   }
 
-  function handleSave() {
-    // In production this would POST to /api/ai-settings
-    alert("Settings saved! (demo)");
+  // ---------- Render ----------
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid gap-6 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-5 w-32" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </CardContent>
+            </Card>
+          ))
+        }
+      </div>
+      </div>
+    );
   }
 
-  function handleReset() {
-    setSettings(DEFAULT_SETTINGS);
+  if (error && !settings) {
+    return (
+      <EmptyState
+        icon={Bot}
+        title="Failed to load AI settings"
+        description={error}
+        action={
+          <Button onClick={fetchSettings}>Try again</Button>
+        }
+      />
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">AI Sales Employee</h1>
+          <h2 className="text-2xl font-bold tracking-tight">AI Configuration</h2>
           <p className="text-sm text-muted-foreground">
-            Configure your AI assistant's personality and behavior
+            Configure your AI sales assistant behavior
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={handleReset}>
-            <RotateCcw className="mr-2 size-4" /> Reset
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={openTest}>
+            <Bot className="mr-2 size-4" />
+            Test AI
           </Button>
-          <Button variant="outline" size="sm" onClick={openTestDialog}>
-            <TestTube2 className="mr-2 size-4" /> Test AI
-          </Button>
-          <Button size="sm" onClick={handleSave}>
-            <Save className="mr-2 size-4" /> Save
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
+            Save Settings
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Personality & Tone */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Personality */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Personality & Tone</CardTitle>
-            <CardDescription>Define how your AI communicates with customers</CardDescription>
+            <CardTitle className="text-base">Personality</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label>Personality</Label>
-              <div className="grid gap-3">
-                {PERSONALITIES.map((p) => (
-                  <button
-                    key={p.value}
-                    onClick={() => setSettings((s) => ({ ...s, personality: p.value }))}
-                    className={cn(
-                      "flex flex-col items-start rounded-lg border p-4 text-left transition-colors hover:bg-muted/50",
-                      settings.personality === p.value && "border-primary bg-primary/5"
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={cn(
-                          "size-3 rounded-full border-2",
-                          settings.personality === p.value
-                            ? "border-primary bg-primary"
-                            : "border-muted-foreground/30"
-                        )}
-                      />
-                      <span className="font-medium text-sm">{p.label}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 ml-5">{p.description}</p>
-                  </button>
+          <CardContent>
+            <RadioGroup
+              value={form.personality}
+              onValueChange={(v) => setForm({ ...form, personality: v as AIpersonality })}
+              className="space-y-2"
+            >
+              {personalities.map((p) => (
+                <div key={p.value} className="flex items-center gap-2">
+                  <RadioGroupItem value={p.value} id={`personality-${p.value}`} />
+                  <Label htmlFor={`personality-${p.value}`} className="font-normal">
+                    {p.label}
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </CardContent>
+        </Card>
+
+        {/* Tone */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Tone</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Select
+              value={form.tone}
+              onValueChange={(v) => setForm({ ...form, tone: v as AITone })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {tones.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
                 ))}
-              </div>
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+
+        {/* Language */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Language</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Select
+              value={form.language}
+              onValueChange={(v) => setForm({ ...form, language: v })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {languages.map((l) => (
+                  <SelectItem key={l.value} value={l.value}>
+                    {l.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+
+        {/* Model & API Key */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Model & API Key</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-2">
+              <Label>Model</Label>
+              <Select
+                value={form.model}
+                onValueChange={(v) => setForm({ ...form, model: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <Label>Tone</Label>
-              <div className="grid gap-3">
-                {TONES.map((t) => (
-                  <button
-                    key={t.value}
-                    onClick={() => setSettings((s) => ({ ...s, tone: t.value }))}
-                    className={cn(
-                      "flex flex-col items-start rounded-lg border p-4 text-left transition-colors hover:bg-muted/50",
-                      settings.tone === t.value && "border-primary bg-primary/5"
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={cn(
-                          "size-3 rounded-full border-2",
-                          settings.tone === t.value
-                            ? "border-primary bg-primary"
-                            : "border-muted-foreground/30"
-                        )}
-                      />
-                      <span className="font-medium text-sm">{t.label}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 ml-5">{t.description}</p>
-                  </button>
-                ))}
+            <div className="grid gap-2">
+              <Label>API Key</Label>
+              <div className="relative">
+                <Input
+                  type={showApiKey ? "text" : "password"}
+                  value={form.apiKey}
+                  onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                  placeholder="sk-..."
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Language, Greeting, Auto-Reply */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Communication</CardTitle>
-              <CardDescription>Language and greeting settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Language</Label>
-                <Select
-                  value={settings.language}
-                  onValueChange={(v) => setSettings((s) => ({ ...s, language: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LANGUAGES.map((l) => (
-                      <SelectItem key={l.value} value={l.value}>
-                        {l.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        {/* Greeting Message */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Greeting Message</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Textarea
+              value={form.greetingMessage}
+              onChange={(e) => setForm({ ...form, greetingMessage: e.target.value })}
+              placeholder="Hi there! Welcome! How can I help you today?"
+              rows={3}
+            />
+          </CardContent>
+        </Card>
 
-              <div className="space-y-2">
-                <Label>Greeting Message</Label>
-                <Textarea
-                  value={settings.greetingMessage}
-                  onChange={(e) => setSettings((s) => ({ ...s, greetingMessage: e.target.value }))}
-                  rows={4}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Auto-Reply</Label>
-                  <p className="text-xs text-muted-foreground">
-                    AI automatically responds to new messages
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.autoReply}
-                  onCheckedChange={(checked) => setSettings((s) => ({ ...s, autoReply: checked }))}
-                />
-              </div>
-
-              {settings.autoReply && (
-                <div className="space-y-2">
-                  <Label>Working Hours Reply</Label>
-                  <Textarea
-                    value={settings.workingHoursReply}
-                    onChange={(e) => setSettings((s) => ({ ...s, workingHoursReply: e.target.value }))}
-                    rows={3}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Model & API Key */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">AI Model</CardTitle>
-              <CardDescription>Configure the underlying AI model</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Model</Label>
-                <Select
-                  value={settings.model}
-                  onValueChange={(v) => setSettings((s) => ({ ...s, model: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODELS.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>API Key</Label>
-                <div className="relative">
-                  <Input
-                    type={showApiKey ? "text" : "password"}
-                    value={settings.apiKey}
-                    onChange={(e) => setSettings((s) => ({ ...s, apiKey: e.target.value }))}
-                    placeholder="sk-proj-..."
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 size-8"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                  >
-                    {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Your API key is stored securely and encrypted.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Working Hours Reply */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Working Hours Reply</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Textarea
+              value={form.workingHoursReply}
+              onChange={(e) => setForm({ ...form, workingHoursReply: e.target.value })}
+              placeholder="Thanks for reaching out! We're currently outside working hours. We'll get back to you as soon as possible."
+              rows={3}
+            />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="auto-reply">Auto-Reply</Label>
+              <Switch
+                id="auto-reply"
+                checked={form.autoReply}
+                onCheckedChange={(v) => setForm({ ...form, autoReply: v })}
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Test AI Dialog */}
       <Dialog open={testOpen} onOpenChange={setTestOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Bot className="size-5" /> Test AI Chat
-            </DialogTitle>
+            <DialogTitle>Test AI Chat</DialogTitle>
             <DialogDescription>
-              Test how your AI responds to customer messages
+              Send a test message to see how your AI responds.
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg border bg-muted/30 h-80 overflow-hidden flex flex-col">
-            <ScrollArea className="flex-1 p-4">
-              <div className="space-y-3">
-                {testMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={cn(
-                      "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap",
-                      msg.sender === "ai"
-                        ? "bg-muted mr-auto rounded-bl-md"
-                        : "bg-primary text-primary-foreground ml-auto rounded-br-md"
-                    )}
-                  >
-                    {msg.sender === "ai" && (
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Bot className="size-3 text-primary" />
-                        <span className="text-[10px] font-medium text-primary">AI</span>
+
+          <div className="space-y-4">
+            <ScrollArea className="h-[300px] rounded-lg border p-4">
+              {testMessages.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  Send a message to test the AI assistant.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {testMessages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                          msg.role === "user"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {msg.role === "assistant" && <Bot className="size-3" />}
+                          <span className="text-xs font-medium opacity-70">
+                            {msg.role === "user" ? "You" : "AI"}
+                          </span>
+                        </div>
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
                       </div>
-                    )}
-                    {msg.content}
-                  </div>
-                ))}
-                {isTesting && (
-                  <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 mr-auto">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <Bot className="size-3 text-primary" />
-                      <span className="text-[10px] font-medium text-primary">AI</span>
                     </div>
-                    <div className="flex gap-1">
-                      <span className="size-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="size-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="size-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  ))}
+                  {testLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted rounded-lg px-3 py-2">
+                        <Loader2 className="size-4 animate-spin" />
+                      </div>
                     </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
+                  )}
+                </div>
+              )}
             </ScrollArea>
-            <Separator />
+
             <form
-              className="flex gap-2 p-3"
               onSubmit={(e) => {
                 e.preventDefault();
-                sendTestMessage();
+                handleTestSend();
               }}
+              className="flex items-center gap-2"
             >
               <Input
                 value={testInput}
                 onChange={(e) => setTestInput(e.target.value)}
                 placeholder="Type a test message..."
-                disabled={isTesting}
+                disabled={testLoading}
                 className="flex-1"
               />
-              <Button type="submit" size="icon" disabled={!testInput.trim() || isTesting}>
-                <Send className="size-4" />
+              <Button type="submit" size="icon" disabled={testLoading || !testInput.trim()}>
+                {testLoading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Send className="size-4" />
+                )}
               </Button>
             </form>
           </div>

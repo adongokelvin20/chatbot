@@ -1,29 +1,29 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Plus,
+  CreditCard,
+  Wallet,
+  Banknote,
   Pencil,
   Trash2,
-  Smartphone,
-  Building2,
-  Banknote,
-  CreditCard,
-  MoreVertical,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -32,301 +32,308 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import type { PaymentMethodType } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
 interface PaymentMethod {
   id: string;
   name: string;
   type: PaymentMethodType;
+  config: Record<string, string> | null;
   active: boolean;
-  config: {
-    phone?: string;
-    bankName?: string;
-    accountNumber?: string;
-    accountName?: string;
-    instructions?: string;
-  };
+  createdAt: string;
 }
 
 interface PaymentFormData {
   name: string;
   type: PaymentMethodType;
-  phone: string;
-  bankName: string;
-  accountNumber: string;
-  accountName: string;
-  instructions: string;
+  config: Record<string, string>;
   active: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Demo Data
-// ---------------------------------------------------------------------------
+const emptyForm: PaymentFormData = {
+  name: "",
+  type: "cash_on_delivery",
+  config: {},
+  active: true,
+};
 
-const DEMO_METHODS: PaymentMethod[] = [
-  {
-    id: "pm1",
-    name: "MTN Mobile Money",
-    type: "momo",
-    active: true,
-    config: { phone: "+250 788 456 789" },
-  },
-  {
-    id: "pm2",
-    name: "Airtel Money",
-    type: "momo",
-    active: true,
-    config: { phone: "+250 730 123 456" },
-  },
-  {
-    id: "pm3",
-    name: "Bank of Kigali Transfer",
-    type: "bank_transfer",
-    active: true,
-    config: {
-      bankName: "Bank of Kigali",
-      accountNumber: "000-1234567-89",
-      accountName: "Umuhoza Fashion House Ltd",
-    },
-  },
-  {
-    id: "pm4",
-    name: "Cash on Delivery",
-    type: "cash_on_delivery",
-    active: true,
-    config: {
-      instructions: "Please have the exact amount ready. Our delivery agent will collect payment upon delivery. Ensure someone is available at the delivery address.",
-    },
-  },
+const methodTypes: { value: PaymentMethodType; label: string }[] = [
+  { value: "momo", label: "MoMo" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+  { value: "cash_on_delivery", label: "Cash on Delivery" },
+  { value: "card", label: "Card" },
 ];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const TYPE_ICONS: Record<PaymentMethodType, React.ElementType> = {
-  momo: Smartphone,
-  bank_transfer: Building2,
+const typeIcons: Record<PaymentMethodType, React.ElementType> = {
+  momo: Wallet,
+  bank_transfer: CreditCard,
   cash_on_delivery: Banknote,
   card: CreditCard,
 };
 
-const TYPE_LABELS: Record<PaymentMethodType, string> = {
-  momo: "Mobile Money",
-  bank_transfer: "Bank Transfer",
-  cash_on_delivery: "Cash on Delivery",
-  card: "Card Payment",
-};
+function getConfigFields(type: PaymentMethodType): { key: string; label: string; placeholder: string }[] {
+  switch (type) {
+    case "momo":
+      return [
+        { key: "merchantId", label: "Merchant ID", placeholder: "Merchant ID" },
+        { key: "apiKey", label: "API Key", placeholder: "API Key" },
+      ];
+    case "bank_transfer":
+      return [
+        { key: "bankName", label: "Bank Name", placeholder: "Bank name" },
+        { key: "accountNumber", label: "Account Number", placeholder: "Account number" },
+        { key: "accountName", label: "Account Name", placeholder: "Account holder name" },
+      ];
+    case "card":
+      return [
+        { key: "stripePublicKey", label: "Stripe Public Key", placeholder: "pk_..." },
+        { key: "stripeSecretKey", label: "Stripe Secret Key", placeholder: "sk_..." },
+      ];
+    default:
+      return [];
+  }
+}
 
-const TYPE_COLORS: Record<PaymentMethodType, string> = {
-  momo: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  bank_transfer: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  cash_on_delivery: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  card: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-};
+// ---------- Component ----------
 
-const emptyForm: PaymentFormData = {
-  name: "",
-  type: "momo",
-  phone: "",
-  bankName: "",
-  accountNumber: "",
-  accountName: "",
-  instructions: "",
-  active: true,
-};
+export default function PaymentsSection() {
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export function PaymentsSection() {
-  const [methods, setMethods] = useState<PaymentMethod[]>(DEMO_METHODS);
+  // Dialogs
   const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
-  const [formData, setFormData] = useState<PaymentFormData>(emptyForm);
-  const [editTarget, setEditTarget] = useState<PaymentMethod | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<PaymentMethod | null>(null);
+  const [editing, setEditing] = useState<PaymentMethod | null>(null);
+  const [form, setForm] = useState<PaymentFormData>(emptyForm);
+  const [saving, setSaving] = useState(false);
 
-  function openAdd() {
-    setFormMode("add");
-    setFormData(emptyForm);
-    setEditTarget(null);
+  const [deleteTarget, setDeleteTarget] = useState<PaymentMethod | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // ---------- Data Fetching ----------
+
+  const fetchMethods = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/payment-methods?active=false");
+      if (!res.ok) throw new Error("Failed to fetch payment methods");
+      const json = await res.json();
+      setMethods(Array.isArray(json.data) ? json.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load payment methods");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMethods();
+  }, [fetchMethods]);
+
+  // ---------- Helpers ----------
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
     setFormOpen(true);
   }
 
-  function openEdit(pm: PaymentMethod) {
-    setFormMode("edit");
-    setEditTarget(pm);
-    setFormData({
-      name: pm.name,
-      type: pm.type,
-      phone: pm.config.phone ?? "",
-      bankName: pm.config.bankName ?? "",
-      accountNumber: pm.config.accountNumber ?? "",
-      accountName: pm.config.accountName ?? "",
-      instructions: pm.config.instructions ?? "",
-      active: pm.active,
+  function openEdit(method: PaymentMethod) {
+    setEditing(method);
+    setForm({
+      name: method.name,
+      type: method.type,
+      config: (method.config as Record<string, string>) || {},
+      active: method.active,
     });
     setFormOpen(true);
   }
 
-  function handleSave() {
-    const config: PaymentMethod["config"] = {};
-    if (formData.type === "momo") config.phone = formData.phone;
-    if (formData.type === "bank_transfer") {
-      config.bankName = formData.bankName;
-      config.accountNumber = formData.accountNumber;
-      config.accountName = formData.accountName;
-    }
-    if (formData.type === "cash_on_delivery") config.instructions = formData.instructions;
+  function handleTypeChange(newType: PaymentMethodType) {
+    setForm({
+      ...form,
+      type: newType,
+      config: {},
+    });
+  }
 
-    if (formMode === "add") {
-      const newMethod: PaymentMethod = {
-        id: `pm-${Date.now()}`,
-        name: formData.name,
-        type: formData.type,
-        active: formData.active,
-        config,
+  // ---------- CRUD ----------
+
+  async function handleSave() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      const body = {
+        name: form.name.trim(),
+        type: form.type,
+        config: Object.keys(form.config).length > 0 ? form.config : undefined,
+        active: form.active,
       };
-      setMethods((prev) => [...prev, newMethod]);
-    } else if (editTarget) {
-      setMethods((prev) =>
-        prev.map((m) =>
-          m.id === editTarget.id
-            ? { ...m, name: formData.name, type: formData.type, active: formData.active, config }
-            : m
-        )
-      );
+
+      const url = editing
+        ? `/api/payment-methods/${editing.id}`
+        : "/api/payment-methods";
+      const method = editing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error("Failed to save payment method");
+      setFormOpen(false);
+      await fetchMethods();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
     }
-    setFormOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) return;
-    setMethods((prev) => prev.filter((m) => m.id !== deleteTarget.id));
-    setDeleteOpen(false);
-    setDeleteTarget(null);
-  }
-
-  function toggleActive(pm: PaymentMethod) {
-    setMethods((prev) =>
-      prev.map((m) => (m.id === pm.id ? { ...m, active: !m.active } : m))
-    );
-  }
-
-  function renderConfigDetails(pm: PaymentMethod) {
-    switch (pm.type) {
-      case "momo":
-        return <p className="text-sm text-muted-foreground">{pm.config.phone}</p>;
-      case "bank_transfer":
-        return (
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">{pm.config.bankName}</p>
-            <p className="text-xs text-muted-foreground font-mono">{pm.config.accountNumber}</p>
-            <p className="text-xs text-muted-foreground">{pm.config.accountName}</p>
-          </div>
-        );
-      case "cash_on_delivery":
-        return <p className="text-sm text-muted-foreground line-clamp-2">{pm.config.instructions}</p>;
-      default:
-        return null;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/payment-methods/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete payment method");
+      setDeleteTarget(null);
+      await fetchMethods();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
     }
   }
+
+  // ---------- Render ----------
+
+  const configFields = getConfigFields(form.type);
+  const TypeIcon = typeIcons[form.type];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Payment Methods"
-        description="Manage how your customers pay"
+        description="Configure how customers can pay"
         action={
-          <Button onClick={openAdd}>
+          <Button onClick={openCreate}>
             <Plus className="mr-2 size-4" />
             Add Method
           </Button>
         }
       />
 
-      {methods.length === 0 ? (
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-10 rounded-lg" />
+                  <div className="space-y-1">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                </div>
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-3/4" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && methods.length === 0 && (
         <EmptyState
           icon={CreditCard}
           title="No payment methods"
-          description="Add a payment method so customers can pay for orders."
+          description="Add payment methods to let customers pay for orders."
           action={
-            <Button size="sm" onClick={openAdd}>
+            <Button onClick={openCreate}>
               <Plus className="mr-2 size-4" />
               Add Method
             </Button>
           }
         />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
-          {methods.map((pm) => {
-            const Icon = TYPE_ICONS[pm.type];
+      )}
+
+      {/* Cards */}
+      {!loading && methods.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {methods.map((method) => {
+            const Icon = typeIcons[method.type] || CreditCard;
+            const config = method.config as Record<string, string> | null;
             return (
-              <Card key={pm.id} className={pm.active ? "" : "opacity-60"}>
-                <CardHeader className="pb-3">
+              <Card key={method.id} className={!method.active ? "opacity-60" : ""}>
+                <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className={`flex size-10 items-center justify-center rounded-lg ${TYPE_COLORS[pm.type]}`}>
-                        <Icon className="size-5" />
+                      <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
+                        <Icon className="size-5 text-muted-foreground" />
                       </div>
                       <div>
-                        <CardTitle className="text-base">{pm.name}</CardTitle>
-                        <Badge variant="outline" className="mt-1 text-xs">
-                          {TYPE_LABELS[pm.type]}
+                        <h3 className="font-semibold">{method.name}</h3>
+                        <Badge variant="outline" className="mt-1 capitalize text-xs">
+                          {method.type.replace(/_/g, " ")}
                         </Badge>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-8">
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => toggleActive(pm)}>
-                            {pm.active ? "Deactivate" : "Activate"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openEdit(pm)}>
-                            <Pencil className="mr-2 size-4" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => {
-                              setDeleteTarget(pm);
-                              setDeleteOpen(true);
-                            }}
-                          >
-                            <Trash2 className="mr-2 size-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                    <Badge variant={method.active ? "default" : "secondary"}>
+                      {method.active ? "Active" : "Inactive"}
+                    </Badge>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {renderConfigDetails(pm)}
-                  <div className="flex items-center justify-between mt-4 pt-3 border-t">
-                    <span className="text-xs text-muted-foreground">Status</span>
-                    <Switch
-                      checked={pm.active}
-                      onCheckedChange={() => toggleActive(pm)}
-                    />
+
+                  {config && Object.keys(config).length > 0 && (
+                    <div className="mt-4 space-y-1">
+                      {Object.entries(config).map(([key, value]) => (
+                        <div key={key} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground capitalize">
+                            {key.replace(/([A-Z])/g, " $1")}
+                          </span>
+                          <span className="font-mono text-xs">
+                            {value.length > 12 ? value.slice(0, 12) + "..." : value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex items-center gap-1 border-t pt-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => openEdit(method)}
+                    >
+                      <Pencil className="mr-1 size-3" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-red-500 hover:text-red-600"
+                      onClick={() => setDeleteTarget(method)}
+                    >
+                      <Trash2 className="mr-1 size-3" />
+                      Delete
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -335,138 +342,98 @@ export function PaymentsSection() {
         </div>
       )}
 
-      {/* Add/Edit Dialog */}
+      {/* Create/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{formMode === "add" ? "Add Payment Method" : "Edit Payment Method"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Payment Method" : "Add Payment Method"}
+            </DialogTitle>
             <DialogDescription>
-              {formMode === "add"
-                ? "Add a new payment method for your store."
-                : "Update payment method configuration."}
+              {editing
+                ? "Update payment method details."
+                : "Configure a new payment method."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
               <Label htmlFor="pm-name">Name *</Label>
               <Input
                 id="pm-name"
-                value={formData.name}
-                onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g., MTN Mobile Money"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g., MoMo, Bank Transfer"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Type *</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(v) => setFormData((f) => ({ ...f, type: v as PaymentMethodType }))}
-              >
-                <SelectTrigger>
+
+            <div className="grid gap-2">
+              <Label htmlFor="pm-type">Type</Label>
+              <Select value={form.type} onValueChange={(v) => handleTypeChange(v as PaymentMethodType)}>
+                <SelectTrigger id="pm-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="momo">Mobile Money</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="cash_on_delivery">Cash on Delivery</SelectItem>
-                  <SelectItem value="card">Card Payment</SelectItem>
+                  {methodTypes.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {formData.type === "momo" && (
-              <div className="space-y-2">
-                <Label htmlFor="pm-phone">Phone Number *</Label>
+            {/* Config fields based on type */}
+            {configFields.map((field) => (
+              <div key={field.key} className="grid gap-2">
+                <Label htmlFor={`pm-config-${field.key}`}>{field.label}</Label>
                 <Input
-                  id="pm-phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData((f) => ({ ...f, phone: e.target.value }))}
-                  placeholder="+250 7XX XXX XXX"
+                  id={`pm-config-${field.key}`}
+                  value={form.config[field.key] || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      config: { ...form.config, [field.key]: e.target.value },
+                    })
+                  }
+                  placeholder={field.placeholder}
                 />
               </div>
-            )}
-
-            {formData.type === "bank_transfer" && (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="pm-bank">Bank Name *</Label>
-                  <Input
-                    id="pm-bank"
-                    value={formData.bankName}
-                    onChange={(e) => setFormData((f) => ({ ...f, bankName: e.target.value }))}
-                    placeholder="e.g., Bank of Kigali"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pm-account">Account Number *</Label>
-                  <Input
-                    id="pm-account"
-                    value={formData.accountNumber}
-                    onChange={(e) => setFormData((f) => ({ ...f, accountNumber: e.target.value }))}
-                    placeholder="000-0000000-00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pm-acctname">Account Name *</Label>
-                  <Input
-                    id="pm-acctname"
-                    value={formData.accountName}
-                    onChange={(e) => setFormData((f) => ({ ...f, accountName: e.target.value }))}
-                    placeholder="Business name"
-                  />
-                </div>
-              </div>
-            )}
-
-            {formData.type === "cash_on_delivery" && (
-              <div className="space-y-2">
-                <Label htmlFor="pm-instructions">Instructions *</Label>
-                <textarea
-                  id="pm-instructions"
-                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={formData.instructions}
-                  onChange={(e) => setFormData((f) => ({ ...f, instructions: e.target.value }))}
-                  placeholder="Instructions for cash on delivery..."
-                  rows={3}
-                />
-              </div>
-            )}
+            ))}
 
             <div className="flex items-center justify-between">
-              <div>
-                <Label>Active</Label>
-                <p className="text-xs text-muted-foreground">Enable this payment method</p>
-              </div>
+              <Label htmlFor="pm-active">Active</Label>
               <Switch
-                checked={formData.active}
-                onCheckedChange={(checked) => setFormData((f) => ({ ...f, active: checked }))}
+                id="pm-active"
+                checked={form.active}
+                onCheckedChange={(v) => setForm({ ...form, active: v })}
               />
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!formData.name.trim()}>
-              {formMode === "add" ? "Add Method" : "Save Changes"}
+            <Button variant="outline" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
+              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {editing ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Payment Method</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete Payment Method"
+        description={`Are you sure you want to delete "${deleteTarget?.name || "this method"}"?`}
+        onConfirm={handleDelete}
+        variant="destructive"
+        confirmLabel="Delete"
+        isLoading={deleting}
+      />
     </div>
   );
 }

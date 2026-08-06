@@ -1,40 +1,26 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Plus,
+  Tag,
   Pencil,
   Trash2,
-  MoreVertical,
-  Tag,
-  Calendar,
-  Percent,
-  Zap,
-  Gift,
-  Ticket,
+  Loader2,
 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -44,18 +30,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import type { PromotionType, DiscountType } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
 interface Promotion {
   id: string;
@@ -63,14 +50,15 @@ interface Promotion {
   type: PromotionType;
   discountType: DiscountType;
   discountValue: number;
-  minOrder?: number;
-  maxDiscount?: number;
-  code?: string;
-  validFrom: string;
-  validUntil: string;
+  minOrder?: number | null;
+  maxDiscount?: number | null;
+  code?: string | null;
+  validFrom?: string | null;
+  validUntil?: string | null;
   autoApply: boolean;
-  description?: string;
+  description?: string | null;
   active: boolean;
+  createdAt: string;
 }
 
 interface PromotionFormData {
@@ -85,74 +73,7 @@ interface PromotionFormData {
   validUntil: string;
   autoApply: boolean;
   description: string;
-}
-
-// ---------------------------------------------------------------------------
-// Demo Data
-// ---------------------------------------------------------------------------
-
-const DEMO_PROMOTIONS: Promotion[] = [
-  {
-    id: "promo1",
-    name: "New Year Sale",
-    type: "discount",
-    discountType: "percentage",
-    discountValue: 15,
-    minOrder: 20000,
-    maxDiscount: 30000,
-    code: undefined,
-    validFrom: "2025-01-01",
-    validUntil: "2025-01-31",
-    autoApply: true,
-    description: "Start the new year in style! 15% off all items over 20,000 RWF.",
-    active: true,
-  },
-  {
-    id: "promo2",
-    name: "Flash Friday",
-    type: "flash_sale",
-    discountType: "percentage",
-    discountValue: 25,
-    minOrder: 10000,
-    maxDiscount: 15000,
-    code: "FLASH25",
-    validFrom: "2025-01-17",
-    validUntil: "2025-01-17",
-    autoApply: false,
-    description: "Every Friday, 25% off for 6 hours only (noon to 6 PM). Use code FLASH25.",
-    active: true,
-  },
-  {
-    id: "promo3",
-    name: "Welcome Coupon",
-    type: "coupon",
-    discountType: "fixed",
-    discountValue: 5000,
-    minOrder: 15000,
-    code: "KARIBU5000",
-    validFrom: "2025-01-01",
-    validUntil: "2025-06-30",
-    autoApply: false,
-    description: "New customers get 5,000 RWF off their first order. Minimum order 15,000 RWF.",
-    active: true,
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const TYPE_CONFIG: Record<PromotionType, { label: string; icon: React.ElementType; color: string }> = {
-  discount: { label: "Discount", icon: Percent, color: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
-  flash_sale: { label: "Flash Sale", icon: Zap, color: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
-  coupon: { label: "Coupon", icon: Ticket, color: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" },
-  limited_offer: { label: "Limited Offer", icon: Gift, color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
-};
-
-function formatDiscount(promo: Promotion): string {
-  return promo.discountType === "percentage"
-    ? `${promo.discountValue}% off`
-    : `${new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 }).format(promo.discountValue)} off`;
+  active: boolean;
 }
 
 const emptyForm: PromotionFormData = {
@@ -167,362 +88,468 @@ const emptyForm: PromotionFormData = {
   validUntil: "",
   autoApply: false,
   description: "",
+  active: true,
 };
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+const promotionTypes: { value: PromotionType; label: string }[] = [
+  { value: "discount", label: "Discount" },
+  { value: "flash_sale", label: "Flash Sale" },
+  { value: "coupon", label: "Coupon" },
+  { value: "limited_offer", label: "Limited Offer" },
+];
 
-export function PromotionsSection() {
-  const [promotions, setPromotions] = useState<Promotion[]>(DEMO_PROMOTIONS);
+const discountTypes: { value: DiscountType; label: string }[] = [
+  { value: "percentage", label: "Percentage (%)" },
+  { value: "fixed", label: "Fixed Amount ($)" },
+];
+
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(amount);
+}
+
+// ---------- Component ----------
+
+export default function PromotionsSection() {
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Dialogs
   const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
-  const [formData, setFormData] = useState<PromotionFormData>(emptyForm);
-  const [editTarget, setEditTarget] = useState<Promotion | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Promotion | null>(null);
+  const [editing, setEditing] = useState<Promotion | null>(null);
+  const [form, setForm] = useState<PromotionFormData>(emptyForm);
+  const [saving, setSaving] = useState(false);
 
-  function openAdd() {
-    setFormMode("add");
-    setFormData(emptyForm);
-    setEditTarget(null);
+  const [deleteTarget, setDeleteTarget] = useState<Promotion | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // ---------- Data Fetching ----------
+
+  const fetchPromotions = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/promotions?active=false");
+      if (!res.ok) throw new Error("Failed to fetch promotions");
+      const json = await res.json();
+      setPromotions(Array.isArray(json.data) ? json.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load promotions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPromotions();
+  }, [fetchPromotions]);
+
+  // ---------- Helpers ----------
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
     setFormOpen(true);
   }
 
   function openEdit(promo: Promotion) {
-    setFormMode("edit");
-    setEditTarget(promo);
-    setFormData({
+    setEditing(promo);
+    setForm({
       name: promo.name,
       type: promo.type,
       discountType: promo.discountType,
       discountValue: String(promo.discountValue),
       minOrder: promo.minOrder ? String(promo.minOrder) : "",
       maxDiscount: promo.maxDiscount ? String(promo.maxDiscount) : "",
-      code: promo.code ?? "",
-      validFrom: promo.validFrom,
-      validUntil: promo.validUntil,
+      code: promo.code || "",
+      validFrom: promo.validFrom ? promo.validFrom.slice(0, 10) : "",
+      validUntil: promo.validUntil ? promo.validUntil.slice(0, 10) : "",
       autoApply: promo.autoApply,
-      description: promo.description ?? "",
+      description: promo.description || "",
+      active: promo.active,
     });
     setFormOpen(true);
   }
 
-  function handleSave() {
-    const data = {
-      name: formData.name,
-      type: formData.type,
-      discountType: formData.discountType,
-      discountValue: Number(formData.discountValue) || 0,
-      minOrder: formData.minOrder ? Number(formData.minOrder) : undefined,
-      maxDiscount: formData.maxDiscount ? Number(formData.maxDiscount) : undefined,
-      code: formData.code.trim() || undefined,
-      validFrom: formData.validFrom,
-      validUntil: formData.validUntil,
-      autoApply: formData.autoApply,
-      description: formData.description.trim() || undefined,
-      active: true,
-    };
+  // ---------- CRUD ----------
 
-    if (formMode === "add") {
-      setPromotions((prev) => [...prev, { id: `promo-${Date.now()}`, ...data }]);
-    } else if (editTarget) {
-      setPromotions((prev) =>
-        prev.map((p) => (p.id === editTarget.id ? { ...p, ...data } : p))
-      );
+  async function handleSave() {
+    if (!form.name.trim() || !form.discountValue) return;
+    setSaving(true);
+    try {
+      const body = {
+        name: form.name.trim(),
+        type: form.type,
+        discountType: form.discountType,
+        discountValue: parseFloat(form.discountValue) || 0,
+        minOrder: form.minOrder ? parseFloat(form.minOrder) || undefined : undefined,
+        maxDiscount: form.maxDiscount ? parseFloat(form.maxDiscount) || undefined : undefined,
+        code: form.code.trim() || undefined,
+        validFrom: form.validFrom ? new Date(form.validFrom).toISOString() : undefined,
+        validUntil: form.validUntil ? new Date(form.validUntil).toISOString() : undefined,
+        autoApply: form.autoApply,
+        description: form.description.trim() || undefined,
+        active: form.active,
+      };
+
+      const url = editing
+        ? `/api/promotions/${editing.id}`
+        : "/api/promotions";
+      const method = editing ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error("Failed to save promotion");
+      setFormOpen(false);
+      await fetchPromotions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
     }
-    setFormOpen(false);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteTarget) return;
-    setPromotions((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-    setDeleteOpen(false);
-    setDeleteTarget(null);
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/promotions/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete promotion");
+      setDeleteTarget(null);
+      await fetchPromotions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  function toggleActive(promo: Promotion) {
-    setPromotions((prev) =>
-      prev.map((p) => (p.id === promo.id ? { ...p, active: !p.active } : p))
-    );
-  }
+  // ---------- Render ----------
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Promotions"
-        description="Create and manage discounts and offers"
+        description="Manage discounts, coupons, and special offers"
         action={
-          <Button onClick={openAdd}>
+          <Button onClick={openCreate}>
             <Plus className="mr-2 size-4" />
-            Create Promotion
+            Add Promotion
           </Button>
         }
       />
 
-      {promotions.length === 0 ? (
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Discount</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead>Valid Period</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 7 }).map((_, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full max-w-[100px]" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && promotions.length === 0 && (
         <EmptyState
           icon={Tag}
           title="No promotions"
-          description="Create a promotion to attract customers."
+          description="Create promotions to attract and retain customers."
           action={
-            <Button size="sm" onClick={openAdd}>
+            <Button onClick={openCreate}>
               <Plus className="mr-2 size-4" />
-              Create Promotion
+              Add Promotion
             </Button>
           }
         />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Promotion</TableHead>
-                  <TableHead className="hidden sm:table-cell">Type</TableHead>
-                  <TableHead>Discount</TableHead>
-                  <TableHead className="hidden md:table-cell">Code</TableHead>
-                  <TableHead className="hidden lg:table-cell">Valid Period</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {promotions.map((promo) => {
-                  const typeConfig = TYPE_CONFIG[promo.type];
-                  const TypeIcon = typeConfig.icon;
-                  return (
-                    <TableRow key={promo.id} className={!promo.active ? "opacity-60" : ""}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{promo.name}</p>
-                          {promo.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">
-                              {promo.description}
-                            </p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <Badge variant="outline" className={typeConfig.color}>
-                          <TypeIcon className="size-3 mr-1" />
-                          {typeConfig.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-semibold">{formatDiscount(promo)}</TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {promo.code ? (
-                          <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono">
-                            {promo.code}
-                          </code>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Auto-apply</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Calendar className="size-3" />
-                          {promo.validFrom} — {promo.validUntil}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={promo.active ? "default" : "secondary"}
-                          className={promo.active ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-                        >
-                          {promo.active ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-8">
-                              <MoreVertical className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => toggleActive(promo)}>
-                              {promo.active ? "Deactivate" : "Activate"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => openEdit(promo)}>
-                              <Pencil className="mr-2 size-4" /> Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                setDeleteTarget(promo);
-                                setDeleteOpen(true);
-                              }}
-                            >
-                              <Trash2 className="mr-2 size-4" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
       )}
 
-      {/* Add/Edit Dialog */}
+      {/* Table */}
+      {!loading && promotions.length > 0 && (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Discount</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead>Valid Period</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-[100px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {promotions.map((promo) => (
+                <TableRow key={promo.id}>
+                  <TableCell className="font-medium">{promo.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {promo.type.replace(/_/g, " ")}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {promo.discountType === "percentage"
+                      ? `${promo.discountValue}%`
+                      : formatCurrency(promo.discountValue)}
+                  </TableCell>
+                  <TableCell>
+                    {promo.code ? (
+                      <Badge variant="secondary" className="font-mono">
+                        {promo.code}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatDate(promo.validFrom)} — {formatDate(promo.validUntil)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={promo.active ? "default" : "secondary"}>
+                      {promo.active ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={() => openEdit(promo)}
+                        title="Edit"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-red-500 hover:text-red-600"
+                        onClick={() => setDeleteTarget(promo)}
+                        title="Delete"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create/Edit Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{formMode === "add" ? "Create Promotion" : "Edit Promotion"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Promotion" : "Create Promotion"}
+            </DialogTitle>
             <DialogDescription>
-              {formMode === "add" ? "Set up a new promotion for your store." : "Update promotion details."}
+              {editing
+                ? "Update promotion details."
+                : "Set up a new discount or coupon."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Name *</Label>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="promo-name">Name *</Label>
               <Input
-                value={formData.name}
-                onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g., Holiday Sale"
+                id="promo-name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g., Summer Sale"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Type *</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(v) => setFormData((f) => ({ ...f, type: v as PromotionType }))}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+              <div className="grid gap-2">
+                <Label htmlFor="promo-type">Type</Label>
+                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v as PromotionType })}>
+                  <SelectTrigger id="promo-type">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="discount">Discount</SelectItem>
-                    <SelectItem value="flash_sale">Flash Sale</SelectItem>
-                    <SelectItem value="coupon">Coupon</SelectItem>
-                    <SelectItem value="limited_offer">Limited Offer</SelectItem>
+                    {promotionTypes.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Discount Type *</Label>
-                <Select
-                  value={formData.discountType}
-                  onValueChange={(v) => setFormData((f) => ({ ...f, discountType: v as DiscountType }))}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+              <div className="grid gap-2">
+                <Label htmlFor="promo-dtype">Discount Type</Label>
+                <Select value={form.discountType} onValueChange={(v) => setForm({ ...form, discountType: v as DiscountType })}>
+                  <SelectTrigger id="promo-dtype">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="percentage">Percentage (%)</SelectItem>
-                    <SelectItem value="fixed">Fixed Amount (RWF)</SelectItem>
+                    {discountTypes.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Discount Value *</Label>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="promo-value">Discount Value *</Label>
                 <Input
+                  id="promo-value"
                   type="number"
-                  value={formData.discountValue}
-                  onChange={(e) => setFormData((f) => ({ ...f, discountValue: e.target.value }))}
-                  placeholder={formData.discountType === "percentage" ? "e.g., 15" : "e.g., 5000"}
+                  step="0.01"
+                  value={form.discountValue}
+                  onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+                  placeholder={form.discountType === "percentage" ? "10" : "5.00"}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Min Order (RWF)</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="promo-min">Min Order ($)</Label>
                 <Input
+                  id="promo-min"
                   type="number"
-                  value={formData.minOrder}
-                  onChange={(e) => setFormData((f) => ({ ...f, minOrder: e.target.value }))}
-                  placeholder="e.g., 20000"
+                  step="0.01"
+                  value={form.minOrder}
+                  onChange={(e) => setForm({ ...form, minOrder: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="promo-max">Max Discount ($)</Label>
+                <Input
+                  id="promo-max"
+                  type="number"
+                  step="0.01"
+                  value={form.maxDiscount}
+                  onChange={(e) => setForm({ ...form, maxDiscount: e.target.value })}
+                  placeholder="0.00"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Max Discount (RWF)</Label>
-                <Input
-                  type="number"
-                  value={formData.maxDiscount}
-                  onChange={(e) => setFormData((f) => ({ ...f, maxDiscount: e.target.value }))}
-                  placeholder="e.g., 30000"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Promo Code</Label>
-                <Input
-                  value={formData.code}
-                  onChange={(e) => setFormData((f) => ({ ...f, code: e.target.value }))}
-                  placeholder="e.g., SALE25"
-                />
-              </div>
+            <div className="grid gap-2">
+              <Label htmlFor="promo-code">Coupon Code</Label>
+              <Input
+                id="promo-code"
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                placeholder="SUMMER2024"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Valid From *</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="promo-from">Valid From</Label>
                 <Input
+                  id="promo-from"
                   type="date"
-                  value={formData.validFrom}
-                  onChange={(e) => setFormData((f) => ({ ...f, validFrom: e.target.value }))}
+                  value={form.validFrom}
+                  onChange={(e) => setForm({ ...form, validFrom: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Valid Until *</Label>
+              <div className="grid gap-2">
+                <Label htmlFor="promo-until">Valid Until</Label>
                 <Input
+                  id="promo-until"
                   type="date"
-                  value={formData.validUntil}
-                  onChange={(e) => setFormData((f) => ({ ...f, validUntil: e.target.value }))}
+                  value={form.validUntil}
+                  onChange={(e) => setForm({ ...form, validUntil: e.target.value })}
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={formData.description}
-                onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Brief description of the promotion..."
-                rows={2}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="promo-auto">Auto-Apply</Label>
+              <Switch
+                id="promo-auto"
+                checked={form.autoApply}
+                onCheckedChange={(v) => setForm({ ...form, autoApply: v })}
               />
             </div>
 
             <div className="flex items-center justify-between">
-              <div>
-                <Label>Auto-Apply</Label>
-                <p className="text-xs text-muted-foreground">Automatically apply at checkout</p>
-              </div>
+              <Label htmlFor="promo-active">Active</Label>
               <Switch
-                checked={formData.autoApply}
-                onCheckedChange={(checked) => setFormData((f) => ({ ...f, autoApply: checked }))}
+                id="promo-active"
+                checked={form.active}
+                onCheckedChange={(v) => setForm({ ...form, active: v })}
               />
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!formData.name.trim() || !formData.discountValue || !formData.validFrom || !formData.validUntil}>
-              {formMode === "add" ? "Create" : "Save Changes"}
+            <Button variant="outline" onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !form.name.trim() || !form.discountValue}>
+              {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {editing ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Promotion</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete Promotion"
+        description={`Are you sure you want to delete "${deleteTarget?.name || "this promotion"}"?`}
+        onConfirm={handleDelete}
+        variant="destructive"
+        confirmLabel="Delete"
+        isLoading={deleting}
+      />
     </div>
   );
 }

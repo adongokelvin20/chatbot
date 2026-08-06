@@ -5,21 +5,21 @@ import { ThemeProvider } from "next-themes"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "sonner"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
-import { DashboardSection } from "@/components/sections/DashboardSection"
-import { ProductsSection } from "@/components/sections/ProductsSection"
-import { CategoriesSection } from "@/components/sections/CategoriesSection"
-import { OrdersSection } from "@/components/sections/OrdersSection"
-import { CustomersSection } from "@/components/sections/CustomersSection"
-import { ConversationsSection } from "@/components/sections/ConversationsSection"
-import { AISettingsSection } from "@/components/sections/AISettingsSection"
-import { DeliverySection } from "@/components/sections/DeliverySection"
-import { PaymentsSection } from "@/components/sections/PaymentsSection"
-import { PromotionsSection } from "@/components/sections/PromotionsSection"
-import { FAQSection } from "@/components/sections/FAQSection"
-import { AnalyticsSection } from "@/components/sections/AnalyticsSection"
-import { StaffSection } from "@/components/sections/StaffSection"
-import { SettingsSection } from "@/components/sections/SettingsSection"
-import { NotificationsSection } from "@/components/sections/NotificationsSection"
+import DashboardSection from "@/components/sections/DashboardSection"
+import ProductsSection from "@/components/sections/ProductsSection"
+import CategoriesSection from "@/components/sections/CategoriesSection"
+import OrdersSection from "@/components/sections/OrdersSection"
+import CustomersSection from "@/components/sections/CustomersSection"
+import ConversationsSection from "@/components/sections/ConversationsSection"
+import AISettingsSection from "@/components/sections/AISettingsSection"
+import DeliverySection from "@/components/sections/DeliverySection"
+import PaymentsSection from "@/components/sections/PaymentsSection"
+import PromotionsSection from "@/components/sections/PromotionsSection"
+import FAQSection from "@/components/sections/FAQSection"
+import AnalyticsSection from "@/components/sections/AnalyticsSection"
+import StaffSection from "@/components/sections/StaffSection"
+import SettingsSection from "@/components/sections/SettingsSection"
+import NotificationsSection from "@/components/sections/NotificationsSection"
 import type { NavSection } from "@/components/layout/Header"
 
 const queryClient = new QueryClient({
@@ -57,6 +57,8 @@ function AppContent() {
         return <PaymentsSection />
       case "promotions":
         return <PromotionsSection />
+      case "faq":
+        return <FAQSection />
       case "analytics":
         return <AnalyticsSection />
       case "staff":

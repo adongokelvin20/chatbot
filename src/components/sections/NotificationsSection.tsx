@@ -1,257 +1,240 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  ShoppingCart,
-  Package,
-  AlertTriangle,
-  UserPlus,
-  RotateCcw,
   Bell,
-  Check,
+  ShoppingCart,
+  AlertTriangle,
+  UserCheck,
+  PackageX,
+  Bot,
   CheckCheck,
-  MessageSquare,
-  CreditCard,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmptyState } from "@/components/common/EmptyState";
-import type { NotificationType } from "@/types";
-import { cn } from "@/lib/utils";
+import type { NotificationPayload, NotificationType } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ---------- Types ----------
 
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  read: boolean;
-  createdAt: string;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const TYPE_CONFIG: Record<
-  NotificationType,
-  { icon: React.ElementType; color: string; bg: string }
-> = {
-  new_order: {
-    icon: ShoppingCart,
-    color: "text-blue-600 dark:text-blue-400",
-    bg: "bg-blue-100 dark:bg-blue-950",
-  },
-  bulk_order: {
-    icon: Package,
-    color: "text-violet-600 dark:text-violet-400",
-    bg: "bg-violet-100 dark:bg-violet-950",
-  },
-  refund_request: {
-    icon: RotateCcw,
-    color: "text-amber-600 dark:text-amber-400",
-    bg: "bg-amber-100 dark:bg-amber-950",
-  },
-  low_stock: {
-    icon: AlertTriangle,
-    color: "text-red-600 dark:text-red-400",
-    bg: "bg-red-100 dark:bg-red-950",
-  },
-  human_takeover: {
-    icon: UserPlus,
-    color: "text-orange-600 dark:text-orange-400",
-    bg: "bg-orange-100 dark:bg-orange-950",
-  },
+const iconMap: Partial<Record<NotificationType, React.ElementType>> = {
+  new_order: ShoppingCart,
+  bulk_order: ShoppingCart,
+  refund_request: AlertTriangle,
+  human_takeover: UserCheck,
+  low_stock: PackageX,
 };
 
+const defaultIcon = Bell;
+
 function formatTimeAgo(dateStr: string): string {
-  const now = new Date();
-  const date = new Date(dateStr);
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
-// ---------------------------------------------------------------------------
-// Demo Data
-// ---------------------------------------------------------------------------
+// ---------- Component ----------
 
-const DEMO_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n1",
-    type: "new_order",
-    title: "New Order Received",
-    message: "Grace Uwimana placed an order for RWF 45,000 — Royal Gold Kitenge Set (x1). Payment via MTN MoMo confirmed.",
-    read: false,
-    createdAt: "2025-01-15T10:50:00Z",
-  },
-  {
-    id: "n2",
-    type: "human_takeover",
-    title: "AI Handed Over Conversation",
-    message: "Marie-Claire Mukamana requested to speak with a human agent about order ORD-2025-0108.",
-    read: false,
-    createdAt: "2025-01-15T09:01:00Z",
-  },
-  {
-    id: "n3",
-    type: "bulk_order",
-    title: "Bulk Order Inquiry",
-    message: "Emmanuel Gatera is interested in 5 matching family outfits for a traditional ceremony. Estimated value: RWF 185,000.",
-    read: false,
-    createdAt: "2025-01-14T15:06:00Z",
-  },
-  {
-    id: "n4",
-    type: "low_stock",
-    title: "Low Stock Alert",
-    message: "Kitenge Heritage Matching Set - Royal Blue (M) is down to 2 units. Consider restocking soon.",
-    read: true,
-    createdAt: "2025-01-14T12:00:00Z",
-  },
-  {
-    id: "n5",
-    type: "refund_request",
-    title: "Refund Request",
-    message: "Patrick Niyonzima requested a refund for order ORD-2024-1230 (RWF 38,000). Reason: size too small.",
-    read: true,
-    createdAt: "2025-01-13T14:30:00Z",
-  },
-  {
-    id: "n6",
-    type: "new_order",
-    title: "New Order Received",
-    message: "Diane Ishimwe placed an order for RWF 28,500 — Ankara Maxi Dress (x1). Cash on Delivery.",
-    read: true,
-    createdAt: "2025-01-13T11:00:00Z",
-  },
-];
+export default function NotificationsSection() {
+  const [notifications, setNotifications] = useState<NotificationPayload[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+  // ---------- Data Fetching ----------
 
-export function NotificationsSection() {
-  const [notifications, setNotifications] =
-    useState<Notification[]>(DEMO_NOTIFICATIONS);
+  const fetchNotifications = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/notifications");
+      if (!res.ok) throw new Error("Failed to fetch notifications");
+      const json = await res.json();
+      const data = json.data;
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load notifications"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  // ---------- Actions ----------
+
+  async function handleMarkRead(id: string) {
+    try {
+      const res = await fetch(`/api/notifications/${id}/read`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+        );
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+
+  async function handleMarkAllRead() {
+    setMarkingAll(true);
+    try {
+      const res = await fetch("/api/notifications/read-all", {
+        method: "POST",
+      });
+      if (res.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => ({ ...n, read: true }))
+        );
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setMarkingAll(false);
+    }
+  }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  function markAsRead(id: string) {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
-  }
-
-  function markAllAsRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }
+  // ---------- Render ----------
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
           <p className="text-sm text-muted-foreground">
             {unreadCount > 0
-              ? `You have ${unreadCount} unread notification${unreadCount !== 1 ? "s" : ""}`
-              : "You're all caught up!"}
+              ? `You have ${unreadCount} unread notification${unreadCount > 1 ? "s" : ""}`
+              : "You're all caught up"}
           </p>
         </div>
         {unreadCount > 0 && (
-          <Button variant="outline" size="sm" onClick={markAllAsRead}>
-            <CheckCheck className="mr-2 size-4" /> Mark all as read
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleMarkAllRead}
+            disabled={markingAll}
+          >
+            {markingAll ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <CheckCheck className="mr-2 size-4" />
+            )}
+            Mark all as read
           </Button>
         )}
       </div>
 
-      {notifications.length === 0 ? (
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 rounded-lg border p-4"
+            >
+              <Skeleton className="size-9 rounded-full shrink-0" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && notifications.length === 0 && (
         <EmptyState
           icon={Bell}
           title="No notifications"
-          description="You'll see alerts for new orders, AI takeovers, and more here."
+          description="Notifications will appear here for new orders, low stock alerts, and more."
         />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div>
-              {notifications.map((notification, idx) => {
-                const config = TYPE_CONFIG[notification.type];
-                const Icon = config.icon;
-                return (
-                  <div key={notification.id}>
-                    <button
-                      className={cn(
-                        "w-full text-left p-4 flex items-start gap-4 hover:bg-muted/50 transition-colors",
-                        !notification.read && "bg-primary/[0.03]"
-                      )}
-                      onClick={() => markAsRead(notification.id)}
-                    >
-                      <div
-                        className={cn(
-                          "flex size-10 shrink-0 items-center justify-center rounded-full mt-0.5",
-                          config.bg
-                        )}
-                      >
-                        <Icon className={cn("size-5", config.color)} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p
-                                className={cn(
-                                  "text-sm",
-                                  !notification.read && "font-semibold"
-                                )}
-                              >
-                                {notification.title}
-                              </p>
-                              {!notification.read && (
-                                <span className="size-2 rounded-full bg-primary shrink-0" />
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
-                              {notification.message}
-                            </p>
-                          </div>
-                          <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap">
-                            {formatTimeAgo(notification.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-                      {!notification.read && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 shrink-0 mt-0.5"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            markAsRead(notification.id);
-                          }}
-                        >
-                          <Check className="size-3.5" />
-                        </Button>
-                      )}
-                    </button>
-                    {idx < notifications.length - 1 && <Separator />}
+      )}
+
+      {/* Notification List */}
+      {!loading && notifications.length > 0 && (
+        <ScrollArea className="h-[calc(100vh-16rem)]">
+          <div className="space-y-1">
+            {notifications.map((notification) => {
+              const Icon = iconMap[notification.type] || defaultIcon;
+              return (
+                <button
+                  key={notification.id}
+                  onClick={() => !notification.read && handleMarkRead(notification.id)}
+                  className={`flex w-full items-start gap-3 rounded-lg border p-4 text-left transition-colors hover:bg-accent ${
+                    !notification.read
+                      ? "border-primary/20 bg-primary/5"
+                      : ""
+                  }`}
+                >
+                  <div
+                    className={`flex size-9 shrink-0 items-center justify-center rounded-full ${
+                      !notification.read
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    <Icon className="size-4" />
                   </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p
+                        className={`text-sm ${
+                          !notification.read ? "font-semibold" : "font-medium"
+                        }`}
+                      >
+                        {notification.title}
+                      </p>
+                      {!notification.read && (
+                        <span className="size-2 rounded-full bg-primary shrink-0" />
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
+                      {notification.message}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatTimeAgo(notification.createdAt)}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </ScrollArea>
       )}
     </div>
   );

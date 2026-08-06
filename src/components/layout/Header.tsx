@@ -1,13 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useSyncExternalStore } from "react";
+import React, { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { useTheme } from "next-themes";
-
-const emptySubscribe = () => () => {};
-function useMounted() {
-  return useSyncExternalStore(emptySubscribe, () => true, () => false);
-}
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -46,7 +41,9 @@ export type NavSection =
   | "promotions"
   | "analytics"
   | "staff"
-  | "settings";
+  | "settings"
+  | "faq"
+  | "notifications";
 
 interface HeaderProps {
   currentSection?: NavSection;
@@ -79,6 +76,8 @@ const sectionLabels: Record<NavSection, string> = {
   analytics: "Analytics",
   staff: "Staff",
   settings: "Settings",
+  faq: "FAQs",
+  notifications: "Notifications",
 };
 
 export function Header({
@@ -99,7 +98,11 @@ export function Header({
 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
-  const mounted = useMounted();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -183,8 +186,8 @@ export function Header({
             onNotificationClick={onNotificationClick}
           />
 
-          {/* Dark mode toggle */}
-          {mounted && (
+          {/* Dark mode toggle - only render icon after mount to avoid mismatch */}
+          {mounted ? (
             <Button
               variant="ghost"
               size="icon"
@@ -197,6 +200,10 @@ export function Header({
                 <Moon className="size-4" />
               )}
               <span className="sr-only">Toggle theme</span>
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" className="size-8" aria-hidden>
+              <div className="size-4" />
             </Button>
           )}
 
