@@ -1,0 +1,371 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ BUSINESS (TENANT) ============
+model Business {
+  id            String   @id @default(cuid())
+  name          String
+  logo          String?
+  email         String   @unique
+  phone         String?
+  address       String?
+  website       String?
+  instagram     String?
+  facebook      String?
+  workingHours  String?   // JSON string: {mon:{open:"09:00",close:"17:00"},...}
+  timezone      String   @default("UTC")
+  setupComplete Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  staff         Staff[]
+  products      Product[]
+  categories    Category[]
+  customers     Customer[]
+  orders        Order[]
+  conversations Conversation[]
+  deliveryZones DeliveryZone[]
+  paymentMethods PaymentMethod[]
+  faqs          FAQ[]
+  promotions    Promotion[]
+  aiSettings    AISetting[]
+  analytics     Analytics[]
+  notifications Notification[]
+
+  @@index([email])
+}
+
+// ============ STAFF ============
+model Staff {
+  id            String   @id @default(cuid())
+  businessId    String
+  name          String
+  email         String   @unique
+  role          String   @default("staff") // owner, staff, admin
+  status        String   @default("active") // active, inactive
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([email])
+}
+
+// ============ CUSTOMERS ============
+model Customer {
+  id              String    @id @default(cuid())
+  businessId      String
+  name            String
+  phone           String
+  email           String?
+  notes           String?
+  lastInteraction DateTime?
+  totalOrders     Int       @default(0)
+  totalSpent      Float     @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders          Order[]
+  conversations   Conversation[]
+  customerMemory  CustomerMemory[]
+
+  @@index([businessId])
+  @@index([phone])
+}
+
+// ============ CUSTOMER MEMORY (AI MEMORY) ============
+model CustomerMemory {
+  id              String   @id @default(cuid())
+  customerId      String
+  businessId      String
+  key             String   // e.g. "favoriteColor", "preferredSize"
+  value           String   // e.g. "red", "XL"
+  updatedAt       DateTime @updatedAt
+
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, key])
+  @@index([businessId])
+}
+
+// ============ CATEGORIES ============
+model Category {
+  id            String   @id @default(cuid())
+  businessId    String
+  name          String
+  slug          String
+  description   String?
+  image         String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  products      Product[]
+
+  @@unique([businessId, slug])
+  @@index([businessId])
+}
+
+// ============ PRODUCTS ============
+model Product {
+  id            String   @id @default(cuid())
+  businessId    String
+  name          String
+  description   String?
+  categoryId    String?
+  sku           String?
+  price         Float
+  salePrice     Float?
+  stock         Int      @default(0)
+  colors        String?  // JSON array: ["red","blue","green"]
+  sizes         String?  // JSON array: ["S","M","L","XL"]
+  images        String?  // JSON array of URLs
+  active        Boolean  @default(true)
+  featured      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  orderItems    OrderItem[]
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([active])
+  @@index([featured])
+}
+
+// ============ ORDERS ============
+model Order {
+  id              String    @id @default(cuid())
+  businessId      String
+  customerId      String?
+  orderNumber     String
+  status          String    @default("pending") // pending, confirmed, processing, shipped, delivered, cancelled
+  subtotal        Float
+  deliveryFee     Float     @default(0)
+  discount        Float     @default(0)
+  total           Float
+  paymentMethod   String?
+  paymentStatus   String    @default("pending") // pending, paid, failed
+  deliveryAddress String?   // JSON: {street, city, zip, notes}
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  notes           String?
+  source          String    @default("ai") // ai, manual, whatsapp
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business        Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer        Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+
+  @@unique([businessId, orderNumber])
+  @@index([businessId])
+  @@index([customerId])
+  @@index([status])
+}
+
+// ============ ORDER ITEMS ============
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  productId   String
+  productName String
+  quantity    Int
+  price       Float
+  color       String?
+  size        String?
+
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// ============ CONVERSATIONS ============
+model Conversation {
+  id              String    @id @default(cuid())
+  businessId      String
+  customerId      String?
+  channel         String    @default("web") // web, whatsapp
+  status          String    @default("active") // active, resolved, archived
+  aiActive        Boolean   @default(true)
+  assignedToStaff String?
+  lastMessageAt   DateTime?
+  pinned          Boolean   @default(false)
+  customerName    String?
+  customerPhone   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer        Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  messages        Message[]
+
+  @@index([businessId])
+  @@index([customerId])
+  @@index([status])
+  @@index([lastMessageAt])
+}
+
+// ============ MESSAGES ============
+model Message {
+  id              String    @id @default(cuid())
+  conversationId  String
+  senderType      String    // customer, ai, staff, system
+  senderId        String?
+  content         String
+  contentType     String    @default("text") // text, image, product_card, order_card
+  metadata        String?    // JSON: additional data for cards, product references, etc.
+  isRead          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+// ============ DELIVERY ZONES ============
+model DeliveryZone {
+  id            String   @id @default(cuid())
+  businessId    String
+  city          String
+  fee           Float
+  estimatedDays String  // e.g. "1-3"
+  courierNotes  String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+// ============ PAYMENT METHODS ============
+model PaymentMethod {
+  id            String   @id @default(cuid())
+  businessId    String
+  name          String
+  type          String   // momo, bank_transfer, cash_on_delivery, card
+  config        String?  // JSON: {accountNumber, accountName, bankName, ...}
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+// ============ FAQs ============
+model FAQ {
+  id            String   @id @default(cuid())
+  businessId    String
+  question      String
+  answer        String
+  keywords      String?  // JSON array of search keywords
+  category      String?  // e.g. "delivery", "payment", "returns"
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+// ============ PROMOTIONS ============
+model Promotion {
+  id            String    @id @default(cuid())
+  businessId    String
+  name          String
+  type          String    // discount, flash_sale, coupon, limited_offer
+  discountType  String    // percentage, fixed
+  discountValue Float
+  minOrder      Float?
+  maxDiscount   Float?
+  code          String?   // for coupon codes
+  validFrom     DateTime?
+  validUntil    DateTime?
+  active        Boolean   @default(true)
+  autoApply     Boolean   @default(false)
+  description   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([code])
+  @@index([active])
+}
+
+// ============ AI SETTINGS ============
+model AISetting {
+  id              String   @id @default(cuid())
+  businessId      String
+  personality     String   @default("professional") // professional, friendly, casual
+  tone            String   @default("helpful") // helpful, enthusiastic, calm
+  greetingMessage String?
+  workingHoursReply String?
+  autoReply       Boolean  @default(true)
+  language        String   @default("en") // en, fr, sw, etc.
+  apiKey          String?
+  model           String   @default("gpt-4o-mini")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId])
+}
+
+// ============ ANALYTICS ============
+model Analytics {
+  id              String   @id @default(cuid())
+  businessId      String
+  date            DateTime @default(now())
+  metricType      String   // messages, orders, revenue, conversion, ai_resolution, human_takeover
+  metricValue     Float
+  metadata        String?  // JSON for additional context
+  createdAt       DateTime @default(now())
+
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, date, metricType])
+  @@index([businessId])
+  @@index([date])
+}
+
+// ============ NOTIFICATIONS ============
+model Notification {
+  id              String    @id @default(cuid())
+  businessId      String
+  type            String    // new_order, bulk_order, refund_request, low_stock, human_takeover
+  title           String
+  message         String
+  read            Boolean   @default(false)
+  metadata        String?   // JSON with related entity data
+  createdAt       DateTime  @default(now())
+
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([read])
+  @@index([createdAt])
+}
