@@ -36,6 +36,7 @@ export type NavSection =
   | "customers"
   | "conversations"
   | "ai-sales"
+  | "whatsapp"
   | "delivery"
   | "payments"
   | "promotions"
@@ -70,6 +71,7 @@ const sectionLabels: Record<NavSection, string> = {
   customers: "Customers",
   conversations: "Conversations",
   "ai-sales": "AI Sales Employee",
+  whatsapp: "WhatsApp",
   delivery: "Delivery",
   payments: "Payments",
   promotions: "Promotions",

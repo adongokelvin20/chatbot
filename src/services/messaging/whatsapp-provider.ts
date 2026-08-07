@@ -1,11 +1,9 @@
 /**
- * WhatsApp Business API Provider
+ * WhatsApp Business Cloud API Provider
  *
- * Stub implementation of the MessagingProvider interface for WhatsApp
- * Business Platform. This module is ready for live integration —
- * replace the TODO stubs with actual API calls to:
- *
- *   POST https://graph.facebook.com/v18.0/{phoneNumberId}/messages
+ * Live implementation using Meta's WhatsApp Business Cloud API (v21.0).
+ * Handles sending text/media messages, marking messages as read,
+ * and verifying webhook challenges from Meta.
  *
  * Reference: https://developers.facebook.com/docs/whatsapp/cloud-api
  */
@@ -30,7 +28,7 @@ export interface WhatsAppConfig {
   webhookVerifyToken: string;
   /** Public URL where Meta will deliver webhook events */
   webhookUrl: string;
-  /** API version (defaults to v18.0) */
+  /** API version (defaults to v21.0) */
   apiVersion?: string;
 }
 
@@ -44,7 +42,6 @@ export class WhatsAppProvider implements MessagingProvider {
   private webhookUrl: string;
   private apiVersion: string;
   private messageCallbacks: ((message: IncomingMessage) => void)[] = [];
-  private connected: boolean = false;
 
   constructor(config: WhatsAppConfig) {
     this.apiKey = config.apiKey;
@@ -52,7 +49,7 @@ export class WhatsAppProvider implements MessagingProvider {
     this.businessAccountId = config.businessAccountId;
     this.webhookVerifyToken = config.webhookVerifyToken;
     this.webhookUrl = config.webhookUrl;
-    this.apiVersion = config.apiVersion ?? 'v18.0';
+    this.apiVersion = config.apiVersion ?? 'v21.0';
   }
 
   // ------------ helpers ------------
@@ -68,29 +65,52 @@ export class WhatsAppProvider implements MessagingProvider {
     message: string,
     options?: SendMessageOptions,
   ): Promise<SendMessageResult> {
-    // TODO: Implement live WhatsApp Business API call
-    //   const body = {
-    //     messaging_product: 'whatsapp',
-    //     to: recipient,
-    //     type: 'text',
-    //     text: { body: message, preview_url: options?.previewUrl ?? false },
-    //     ...(options?.replyTo && { context: { message_id: options.replyTo } }),
-    //   };
-    //   const res = await fetch(`${this.baseUrl()}/messages`, {
-    //     method: 'POST',
-    //     headers: {
-    //       'Authorization': `Bearer ${this.apiKey}`,
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify(body),
-    //   });
+    try {
+      const body: Record<string, unknown> = {
+        messaging_product: 'whatsapp',
+        to: recipient,
+        type: 'text',
+        text: {
+          body: message,
+          preview_url: options?.previewUrl ?? false,
+        },
+      };
 
-    console.log('[WhatsApp] Message would be sent to:', recipient);
-    return {
-      success: true,
-      messageId: `wa_mock_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-    };
+      if (options?.replyTo) {
+        body.context = { message_id: options.replyTo };
+      }
+
+      const res = await fetch(`${this.baseUrl()}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error('[WhatsApp] Send failed:', data.error);
+        return {
+          success: false,
+          error: data.error?.message || `HTTP ${res.status}`,
+        };
+      }
+
+      return {
+        success: true,
+        messageId: data.messages?.[0]?.id,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('[WhatsApp] Send error:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
   }
 
   async sendMedia(
@@ -99,81 +119,97 @@ export class WhatsAppProvider implements MessagingProvider {
     mediaType: 'image' | 'video' | 'document',
     caption?: string,
   ): Promise<SendMessageResult> {
-    // TODO: Implement live WhatsApp Business API call
-    //   const body = {
-    //     messaging_product: 'whatsapp',
-    //     to: recipient,
-    //     type: mediaType,
-    //     [mediaType]: {
-    //       link: mediaUrl,
-    //       ...(caption && { caption }),
-    //     },
-    //   };
-    //   const res = await fetch(`${this.baseUrl()}/messages`, {
-    //     method: 'POST',
-    //     headers: {
-    //       'Authorization': `Bearer ${this.apiKey}`,
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify(body),
-    //   });
+    try {
+      const body: Record<string, unknown> = {
+        messaging_product: 'whatsapp',
+        to: recipient,
+        type: mediaType === 'video' ? 'video' : mediaType === 'document' ? 'document' : 'image',
+        [mediaType === 'video' ? 'video' : mediaType === 'document' ? 'document' : 'image']: {
+          link: mediaUrl,
+          ...(caption && { caption }),
+        },
+      };
 
-    console.log('[WhatsApp] Media would be sent to:', recipient, '| type:', mediaType, '| url:', mediaUrl);
-    return {
-      success: true,
-      messageId: `wa_mock_media_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-    };
+      const res = await fetch(`${this.baseUrl()}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error('[WhatsApp] Media send failed:', data.error);
+        return {
+          success: false,
+          error: data.error?.message || `HTTP ${res.status}`,
+        };
+      }
+
+      return {
+        success: true,
+        messageId: data.messages?.[0]?.id,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('[WhatsApp] Media send error:', error);
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
   }
 
   async markAsRead(messageId: string): Promise<void> {
-    // TODO: Implement live WhatsApp Business API call
-    //   await fetch(`${this.baseUrl()}/messages`, {
-    //     method: 'POST',
-    //     headers: {
-    //       'Authorization': `Bearer ${this.apiKey}`,
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify({
-    //       messaging_product: 'whatsapp',
-    //       status: 'read',
-    //       message_id: messageId,
-    //     }),
-    //   });
-
-    console.log('[WhatsApp] Message would be marked as read:', messageId);
+    try {
+      await fetch(`${this.baseUrl()}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: messageId,
+        }),
+      });
+      console.log('[WhatsApp] Message marked as read:', messageId);
+    } catch (error) {
+      console.error('[WhatsApp] Mark as read error:', error);
+    }
   }
 
   onMessage(callback: (message: IncomingMessage) => void): void {
-    // TODO: When the webhook endpoint receives an incoming message event,
-    //   parse it and invoke all registered callbacks.
-    //   For now, callbacks are collected and can be invoked manually
-    //   for testing purposes via `simulateIncoming`.
     this.messageCallbacks.push(callback);
   }
 
+  /** Dispatch an incoming message to all registered callbacks */
+  dispatchMessage(message: IncomingMessage): void {
+    for (const cb of this.messageCallbacks) {
+      cb(message);
+    }
+  }
+
   async disconnect(): Promise<void> {
-    this.connected = false;
     this.messageCallbacks = [];
     console.log('[WhatsApp] Disconnected');
   }
 
   async healthCheck(): Promise<boolean> {
-    // TODO: Implement a lightweight API call (e.g., GET phone number info)
-    //   to verify the token is valid and the account is reachable.
-    //   Until then, report as unhealthy since no live connection exists.
-    return false;
-  }
-
-  // ------------ testing / simulation helpers ------------
-
-  /**
-   * Simulate an incoming WhatsApp message. Useful for local development
-   * and unit tests without a live webhook.
-   */
-  simulateIncoming(message: IncomingMessage): void {
-    for (const cb of this.messageCallbacks) {
-      cb(message);
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}`,
+        {
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+        }
+      );
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -183,5 +219,15 @@ export class WhatsAppProvider implements MessagingProvider {
       return challenge;
     }
     return null;
+  }
+
+  /** Get config info (for debugging) */
+  getConfig(): { phoneNumberId: string; businessAccountId: string; webhookUrl: string; apiVersion: string } {
+    return {
+      phoneNumberId: this.phoneNumberId,
+      businessAccountId: this.businessAccountId,
+      webhookUrl: this.webhookUrl,
+      apiVersion: this.apiVersion,
+    };
   }
 }

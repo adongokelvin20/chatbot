@@ -12,6 +12,7 @@ import OrdersSection from "@/components/sections/OrdersSection"
 import CustomersSection from "@/components/sections/CustomersSection"
 import ConversationsSection from "@/components/sections/ConversationsSection"
 import AISettingsSection from "@/components/sections/AISettingsSection"
+import WhatsAppSection from "@/components/sections/WhatsAppSection"
 import DeliverySection from "@/components/sections/DeliverySection"
 import PaymentsSection from "@/components/sections/PaymentsSection"
 import PromotionsSection from "@/components/sections/PromotionsSection"
@@ -51,6 +52,8 @@ function AppContent() {
         return <ConversationsSection />
       case "ai-sales":
         return <AISettingsSection />
+      case "whatsapp":
+        return <WhatsAppSection />
       case "delivery":
         return <DeliverySection />
       case "payments":
