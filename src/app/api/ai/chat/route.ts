@@ -81,14 +81,14 @@ export async function POST(req: NextRequest) {
     } else {
       // Default response
       reply = `Thank you for your message! I would be happy to help you with that. ` +
-        (business.name ? `At **${business.name}**, ` : '') +
+        (business.name ? `At ${business.name}, ` : '') +
         `we strive to provide the best service.\n\n` +
         `Could you tell me more about what you are looking for? I can help with:\n` +
-        `• Product information and pricing\n` +
-        `• Order placement and tracking\n` +
-        `• Delivery information\n` +
-        `• Payment methods\n` +
-        `• Returns and exchanges`;
+        `- Product information and pricing\n` +
+        `- Order placement and tracking\n` +
+        `- Delivery information\n` +
+        `- Payment methods\n` +
+        `- Returns and exchanges`;
     }
 
     // If conversationId is provided, save the messages

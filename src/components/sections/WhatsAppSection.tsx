@@ -26,9 +26,13 @@ export default function WhatsAppSection() {
     setLoading(false);
   }, []);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied!");
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Copied!");
+    } catch {
+      toast.error("Failed to copy");
+    }
   };
 
   const getWebhookUrl = (path: string) => {

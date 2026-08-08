@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, autoInitDatabase } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
+    await autoInitDatabase();
     const existing = await db.business.findFirst();
     if (existing) {
       return NextResponse.json({

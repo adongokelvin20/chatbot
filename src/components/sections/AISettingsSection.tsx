@@ -223,9 +223,8 @@ export default function AISettingsSection() {
                 <Skeleton className="h-10 w-full" />
               </CardContent>
             </Card>
-          ))
-        }
-      </div>
+          ))}
+        </div>
       </div>
     );
   }

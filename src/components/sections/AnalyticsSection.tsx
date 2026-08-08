@@ -48,11 +48,12 @@ export default function AnalyticsSection() {
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState("7d");
 
-  const fetchAnalytics = useCallback(async () => {
+  const fetchAnalytics = useCallback(async (selectedPeriod?: string) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/analytics/dashboard");
+      const p = selectedPeriod || period;
+      const res = await fetch(`/api/analytics/dashboard?period=${p}`);
       if (!res.ok) throw new Error("Failed to fetch analytics");
       const json = await res.json();
       if (json.success && json.data) {
@@ -65,7 +66,7 @@ export default function AnalyticsSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [period]);
 
   useEffect(() => {
     fetchAnalytics();
@@ -122,7 +123,7 @@ export default function AnalyticsSection() {
           description={error}
           action={
             <button
-              onClick={fetchAnalytics}
+              onClick={() => fetchAnalytics()}
               className="text-sm font-medium text-primary underline underline-offset-4 hover:no-underline"
             >
               Try again
