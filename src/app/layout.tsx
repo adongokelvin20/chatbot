@@ -13,17 +13,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SalesAI - AI Sales Employee Platform",
+  title: "SalesAI Ghana - AI Sales Employee Platform",
   description:
-    "AI-powered sales and customer management system for clothing and branding businesses. Multi-tenant SaaS platform with intelligent sales assistance.",
+    "AI-powered sales and customer management system for businesses in Ghana. WhatsApp-integrated intelligent sales assistant for clothing, branding, and retail businesses.",
   keywords: [
-    "AI Sales",
-    "SaaS",
+    "AI Sales Ghana",
+    "Ghana Business",
+    "WhatsApp Chatbot",
     "Customer Management",
-    "E-commerce",
-    "WhatsApp Business",
-    "Multi-tenant",
-    "Clothing Business",
+    "MTN MoMo",
+    "Ghana E-commerce",
+    "SalesAI",
   ],
 };
 

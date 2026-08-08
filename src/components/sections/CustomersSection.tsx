@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
+import { formatCurrency } from "@/lib/format";
 
 // ---------- Types ----------
 
@@ -69,13 +70,6 @@ const emptyForm: CustomerFormData = {
   email: "",
   notes: "",
 };
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return "—";

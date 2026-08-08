@@ -162,13 +162,37 @@ export const DEFAULT_AI_SETTINGS = {
   personality: "friendly" as AIpersonality,
   tone: "helpful" as AITone,
   greetingMessage:
-    "Hello! 👋 Welcome to our store. I'm your AI assistant. How can I help you today?",
+    "Hello! 👋 Welcome! I'm your AI sales assistant. What can I help you find today?",
   workingHoursReply:
-    "We're currently outside business hours. Your message has been saved and we'll get back to you as soon as possible!",
+    "Sorry, we're currently closed. Please leave a message and we'll get back to you first thing in the morning. Thank you!",
   autoReply: true,
   language: "en",
   model: "gpt-4o-mini",
 };
+
+// Ghana-specific default payment methods for seed data
+export const GHANA_PAYMENT_METHODS = [
+  { name: "MTN Mobile Money", type: "mobile_money", isActive: true },
+  { name: "Vodafone Cash", type: "mobile_money", isActive: true },
+  { name: "ATM/AirtelTigo Money", type: "mobile_money", isActive: true },
+  { name: "Bank Transfer", type: "bank_transfer", isActive: true },
+  { name: "Cash on Delivery", type: "cash", isActive: true },
+];
+
+// Ghana delivery zones
+export const GHANA_DELIVERY_ZONES = [
+  { city: "Accra", fee: 15, estimatedDays: "1-2", isActive: true },
+  { city: "Tema", fee: 15, estimatedDays: "1-2", isActive: true },
+  { city: "Kumasi", fee: 25, estimatedDays: "2-3", isActive: true },
+  { city: "Takoradi", fee: 30, estimatedDays: "2-3", isActive: true },
+  { city: "Tamale", fee: 40, estimatedDays: "3-5", isActive: true },
+  { city: "Cape Coast", fee: 30, estimatedDays: "2-3", isActive: true },
+  { city: "Sunyani", fee: 35, estimatedDays: "3-4", isActive: true },
+  { city: "Koforidua", fee: 25, estimatedDays: "2-3", isActive: true },
+  { city: "Ho", fee: 30, estimatedDays: "2-3", isActive: true },
+  { city: "Wa", fee: 50, estimatedDays: "4-5", isActive: true },
+  { city: "Bolgatanga", fee: 50, estimatedDays: "4-5", isActive: true },
+];
 
 export const AI_PERSONALITY_OPTIONS: { value: AIpersonality; label: string; description: string }[] = [
   { value: "professional", label: "Professional", description: "Formal and business-like tone" },
@@ -353,18 +377,24 @@ export const NOTIFICATION_COLORS: Record<string, string> = {
 // ============================================================================
 
 export const CURRENCY = {
-  code: "USD",
-  symbol: "$",
-  name: "US Dollar",
+  code: "GHS",
+  symbol: "GH₵",
+  name: "Ghana Cedi",
+};
+
+export const COUNTRY = {
+  code: "GH",
+  name: "Ghana",
+  phonePrefix: "+233",
+  timezone: "Africa/Accra",
 };
 
 export const SUPPORTED_LANGUAGES = [
   { code: "en", label: "English" },
+  { code: "tw", label: "Twi" },
+  { code: "ga", label: "Ga" },
+  { code: "ha", label: "Hausa" },
   { code: "fr", label: "Français" },
-  { code: "sw", label: "Swahili" },
-  { code: "es", label: "Español" },
-  { code: "ar", label: "العربية" },
-  { code: "zh", label: "中文" },
 ] as const;
 
 export const CONTENT_TYPE_MAX_LENGTH: Record<ContentType, number> = {

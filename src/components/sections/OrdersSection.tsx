@@ -37,6 +37,7 @@ import {
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { formatCurrency } from "@/lib/format";
 import type { OrderStatus, PaymentStatus } from "@/types";
 
 // ---------- Types ----------
@@ -78,13 +79,6 @@ const orderStatuses: OrderStatus[] = [
   "delivered",
   "cancelled",
 ];
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-}
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {

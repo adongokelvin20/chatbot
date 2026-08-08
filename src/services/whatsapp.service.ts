@@ -156,11 +156,11 @@ async function generateOpenAIResponse(
   ]);
 
   const productContext = products.map(p =>
-    `- ${p.name}: $${p.salePrice ?? p.price}${p.salePrice ? ` (sale from $${p.price})` : ''}${p.description ? ` - ${p.description}` : ''}`
+    `- ${p.name}: GH₵${p.salePrice ?? p.price}${p.salePrice ? ` (was GH₵${p.price})` : ''}${p.description ? ` - ${p.description}` : ''}`
   ).join('\n');
 
   const deliveryContext = deliveryZones.map(z =>
-    `- ${z.city}: $${z.fee} (${z.estimatedDays} business days)`
+    `- ${z.city}: GH₵${z.fee} (${z.estimatedDays} business days)`
   ).join('\n');
 
   const paymentContext = paymentMethods.map(m => `- ${m.name}`).join('\n');

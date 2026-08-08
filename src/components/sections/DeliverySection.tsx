@@ -33,6 +33,7 @@ import {
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { formatCurrency } from "@/lib/format";
 
 // ---------- Types ----------
 
@@ -61,13 +62,6 @@ const emptyForm: DeliveryFormData = {
   courierNotes: "",
   active: true,
 };
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-}
 
 // ---------- Component ----------
 
@@ -328,7 +322,7 @@ export default function DeliverySection() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="dz-fee">Delivery Fee ($)</Label>
+                <Label htmlFor="dz-fee">Delivery Fee (GH₵)</Label>
                 <Input
                   id="dz-fee"
                   type="number"

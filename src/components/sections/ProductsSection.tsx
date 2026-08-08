@@ -39,6 +39,7 @@ import {
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { formatCurrency } from "@/lib/format";
 
 // ---------- Types ----------
 
@@ -94,13 +95,6 @@ const emptyForm: ProductFormData = {
   active: true,
   featured: false,
 };
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-}
 
 // ---------- Component ----------
 

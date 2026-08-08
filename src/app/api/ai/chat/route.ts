@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       });
 
       reply = `Here are some of our products and their prices:\n\n` +
-        products.map((p) => `• **${p.name}** - $${p.salePrice ?? p.price}${p.salePrice ? ` (~~$${p.price}~~)` : ''}`).join('\n') +
+        products.map((p) => `\u2022 ${p.name} - GH\u20b5${p.salePrice ?? p.price}${p.salePrice ? ` (was GH\u20b5${p.price})` : ''}`).join('\n') +
         `\n\nWould you like to know more about any of these items?`;
     } else if (message.includes('delivery') || message.includes('shipping') || message.includes('ship')) {
       const zones = await db.deliveryZone.findMany({
@@ -57,17 +57,17 @@ export async function POST(req: NextRequest) {
       });
 
       reply = `Here are our delivery options:\n\n` +
-        zones.map((z) => `• **${z.city}** - $${z.fee} (${z.estimatedDays} business days)`).join('\n') +
+        zones.map((z) => `\u2022 ${z.city} - GH\u20b5${z.fee} (${z.estimatedDays} business days)`).join('\n') +
         `\n\nWhich city would you like your order delivered to?`;
     } else if (message.includes('return') || message.includes('refund') || message.includes('exchange')) {
-      reply = `We offer a **30-day return policy** for unworn items with tags attached. Returns are free for orders over $50.\n\nTo initiate a return, please provide your order number and I will help you get started!`;
+      reply = `We offer a 7-day return policy for unworn items with tags attached.\n\nTo initiate a return, please provide your order number and I will help you get started!`;
     } else if (message.includes('payment') || message.includes('pay') || message.includes('momo')) {
       const methods = await db.paymentMethod.findMany({
         where: { businessId, active: true },
       });
 
       reply = `We accept the following payment methods:\n\n` +
-        methods.map((m) => `• **${m.name}**`).join('\n') +
+        methods.map((m) => `\u2022 ${m.name}`).join('\n') +
         `\n\nWhich payment method would you prefer?`;
     } else if (message.includes('order') && (message.includes('track') || message.includes('status') || message.includes('where'))) {
       reply = `I would be happy to help you track your order! Could you please provide your order number? It should look like ORD-XXXXXXXX-XXXX.`;

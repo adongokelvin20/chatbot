@@ -40,6 +40,7 @@ import {
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { formatCurrency } from "@/lib/format";
 import type { PromotionType, DiscountType } from "@/types";
 
 // ---------- Types ----------
@@ -100,7 +101,7 @@ const promotionTypes: { value: PromotionType; label: string }[] = [
 
 const discountTypes: { value: DiscountType; label: string }[] = [
   { value: "percentage", label: "Percentage (%)" },
-  { value: "fixed", label: "Fixed Amount ($)" },
+  { value: "fixed", label: "Fixed Amount (GH₵)" },
 ];
 
 function formatDate(dateStr: string | null | undefined): string {
@@ -110,13 +111,6 @@ function formatDate(dateStr: string | null | undefined): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
 }
 
 // ---------- Component ----------
@@ -454,7 +448,7 @@ export default function PromotionsSection() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="promo-min">Min Order ($)</Label>
+                <Label htmlFor="promo-min">Min Order (GH₵)</Label>
                 <Input
                   id="promo-min"
                   type="number"
@@ -465,7 +459,7 @@ export default function PromotionsSection() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="promo-max">Max Discount ($)</Label>
+                <Label htmlFor="promo-max">Max Discount (GH₵)</Label>
                 <Input
                   id="promo-max"
                   type="number"

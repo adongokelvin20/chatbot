@@ -183,7 +183,7 @@ export default function WhatsAppSection() {
                       >
                         twilio.com/try-twilio
                       </a>{" "}
-                      and sign up for free. You get $15 credit to start.
+                      and sign up for free. You get free messages to test with.
                     </>
                   }
                 />
