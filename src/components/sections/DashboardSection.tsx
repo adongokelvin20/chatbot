@@ -8,6 +8,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Package,
+  Rocket,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,6 +71,24 @@ export default function DashboardSection() {
   const [outOfStock, setOutOfStock] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
+
+  const runSetup = async () => {
+    try {
+      setSetupLoading(true);
+      const res = await fetch('/api/setup', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        window.location.reload();
+      } else {
+        setError('Setup failed: ' + (json.error || 'Unknown error'));
+      }
+    } catch (err) {
+      setError('Setup failed: ' + (err instanceof Error ? err.message : 'Network error'));
+    } finally {
+      setSetupLoading(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -166,21 +185,38 @@ export default function DashboardSection() {
     );
   }
 
-  // ----- Error State -----
+  // ----- Error / Setup Required State -----
 
   if (error) {
+    const needsSetup = error.includes('No business found') || error.includes('seed') || error.includes('Failed to fetch');
     return (
       <div className="space-y-6">
         <EmptyState
-          icon={AlertTriangle}
-          title="Failed to load dashboard"
-          description={error}
+          icon={needsSetup ? Rocket : AlertTriangle}
+          title={needsSetup ? "Welcome! Let's set up your store" : "Something went wrong"}
+          description={needsSetup
+            ? "Your AI Sales Employee needs to be initialized. Click the button below to set up everything automatically — products, payments, delivery zones, and more."
+            : error
+          }
           action={
             <button
-              onClick={fetchData}
-              className="text-sm font-medium text-primary underline underline-offset-4 hover:no-underline"
+              onClick={needsSetup ? runSetup : fetchData}
+              disabled={setupLoading}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              Try again
+              {setupLoading ? (
+                <>
+                  <span className="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Setting up...
+                </>
+              ) : needsSetup ? (
+                <>
+                  <Rocket className="size-4" />
+                  Set Up My Store
+                </>
+              ) : (
+                'Try again'
+              )}
             </button>
           }
         />
