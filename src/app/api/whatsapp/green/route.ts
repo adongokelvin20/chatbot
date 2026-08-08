@@ -19,6 +19,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { autoInitDatabase } from '@/lib/db';
 import {
   findOrCreateConversation,
   generateAIResponse,
@@ -85,6 +86,9 @@ function extractPhone(chatId: string): string {
  */
 export async function POST(req: NextRequest) {
   try {
+    // Ensure database is ready
+    await autoInitDatabase();
+
     const body = await req.json();
 
     // Only process incoming messages (ignore other webhook types)
